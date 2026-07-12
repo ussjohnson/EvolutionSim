@@ -25,7 +25,3 @@ All source lives flat in `src/` (default package, no subpackages). The simulatio
 - **`Tile`** (`src/Tile.java`) — a map cell with `foliage`/`fertility` that animals graze (`graze()`) and that regenerates over time (`recover()`). Holds a reference to its current `resident` `Animal`.
 - **`SimSettings`** (`src/SimSettings.java`) and **`Tools`** (`src/Tools.java`) — stubs, not yet implemented.
 - **`Main`** (`src/Main.java`) — entry point; currently just builds a random gene set and prints one `Animal`.
-
-### Known issue
-
-`Animal.calcName()` (`src/Animal.java`) loops `i` up to `numGenes * 2` while indexing directly into `genes[i]`, which only has `numGenes` elements — this throws `ArrayIndexOutOfBoundsException` once `i >= numGenes`. This is a pre-existing bug from the original implementation, not a build/config issue.
