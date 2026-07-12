@@ -44,7 +44,7 @@ class Animal {
     return 0;
   }
   private String calcName() {
-    String symbols="1234567890";
+    String symbols="12345678";
     String vowels="aeiouy";
     String blenders="wrln";
     String anyCons="tpdfghjkzxcvbm0124";
@@ -65,12 +65,13 @@ class Animal {
       String prevChar=String.valueOf(name.charAt(i-1));
       if(vowels.contains(prevChar) || (i>1 && blenders.contains(prevChar) && vowels.contains(String.valueOf(name.charAt(i-2))))) {
         pool=blenders+anyCons+notFirst;
-        if(i<numGenes-1) pool.concat(notLast);
+        if(i<numGenes-1) pool=pool.concat(notLast);
       }
       else pool=vowels;
       poolSize=pool.length();
-      index=genes[i].convToIntScale(0,poolSize);
-      if(i>=numGenes) index=genes[i].intScaleOffset(0,poolSize);
+      int geneIndex=i%numGenes;
+      index=genes[geneIndex].convToIntScale(0,poolSize);
+      if(i>=numGenes) index=genes[geneIndex].intScaleOffset(0,poolSize);
       //System.out.println(pool);
       //System.out.println(poolSize);
       //System.out.println(index);

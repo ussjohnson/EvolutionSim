@@ -38,9 +38,10 @@ class Gene {
   }
   public int intScaleOffset(int upper, int lower) {
     int original = convToIntScale(upper,lower);
-    int offset = (upper-lower)/2;
-    if(original>(lower+offset)) return original-offset;
-    return original+offset;
+    int range = Math.abs(upper-lower);
+    int base = Math.min(upper,lower);
+    int offset = range/2;
+    return base + ((original-base+offset) % range);
   }
   public int convToIntScale(int upper, int lower) {
     Double interimDouble=Double.valueOf(convToDoubleScale(upper, lower));
