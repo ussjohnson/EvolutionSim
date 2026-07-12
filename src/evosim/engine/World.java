@@ -29,6 +29,7 @@ public final class World {
   private final RandomSource rng;
   private final SpeciesRegistry species = new SpeciesRegistry();
   private final Behavior behavior = new Behavior();
+  private final StatsCollector stats = new StatsCollector();
 
   private int tick = 0;
   private int nextId = 0;
@@ -50,6 +51,7 @@ public final class World {
   public static World create(int width, int height, int population, long seed, double baseFertility) {
     World w = new World(width, height, seed, baseFertility);
     w.seedPopulation(population, null, null);
+    w.stats.sample(w);
     return w;
   }
 
@@ -58,6 +60,7 @@ public final class World {
     s.sanitize();
     World w = new World(s.width, s.height, s.seed, s.baseFertility);
     w.seedPopulation(s.population, s.startMin, s.startMax);
+    w.stats.sample(w);
     return w;
   }
 
@@ -105,7 +108,7 @@ public final class World {
     animals.removeIf(a -> !a.isAlive());
     tick++;
     if (tick % Balance.SAMPLE_INTERVAL == 0) {
-      species.sample();
+      stats.sample(this);
     }
   }
 
@@ -174,6 +177,8 @@ public final class World {
   public int currentTick() { return tick; }
   public RandomSource rng() { return rng; }
   public SpeciesRegistry species() { return species; }
+  public StatsCollector stats() { return stats; }
+  public long seed() { return rng.seed(); }
   public List<Animal> animals() { return animals; }
   public int population() { return animals.size(); }
   public int capacity() { return width * height; }

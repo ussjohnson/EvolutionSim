@@ -1,9 +1,13 @@
 package evosim;
 
+import java.io.IOException;
+import java.nio.file.Path;
+
 import javax.swing.SwingUtilities;
 
 import evosim.model.Balance;
 import evosim.engine.World;
+import evosim.report.HtmlReportWriter;
 import evosim.ui.MainWindow;
 
 /**
@@ -12,6 +16,7 @@ import evosim.ui.MainWindow;
  *
  *   java -cp bin evosim.Main --headless [--seed N] [--ticks N]
  *                            [--width N] [--height N] [--pop N]
+ *                            [--report path.html]
  */
 public class Main {
   public static void main(String[] args) {
@@ -21,6 +26,7 @@ public class Main {
     int width = 40;
     int height = 30;
     int pop = 150;
+    String reportPath = null;
 
     for (int i = 0; i < args.length; i++) {
       switch (args[i]) {
@@ -30,6 +36,7 @@ public class Main {
         case "--width":    width = Integer.parseInt(args[++i]); break;
         case "--height":   height = Integer.parseInt(args[++i]); break;
         case "--pop":      pop = Integer.parseInt(args[++i]); break;
+        case "--report":   reportPath = args[++i]; headless = true; break;
         default:
           System.err.println("Unknown argument: " + args[i]);
           return;
@@ -37,13 +44,13 @@ public class Main {
     }
 
     if (headless) {
-      runHeadless(seed, ticks, width, height, pop);
+      runHeadless(seed, ticks, width, height, pop, reportPath);
     } else {
       SwingUtilities.invokeLater(() -> new MainWindow().setVisible(true));
     }
   }
 
-  private static void runHeadless(long seed, int ticks, int width, int height, int pop) {
+  private static void runHeadless(long seed, int ticks, int width, int height, int pop, String reportPath) {
     System.out.printf("Seed=%d  map=%dx%d  startPop=%d  ticks=%d%n", seed, width, height, pop, ticks);
     World w = World.create(width, height, pop, seed, 0.2);
     System.out.printf("tick=%-5d pop=%-5d species=%d%n", 0, w.population(), w.species().extantCount());
@@ -59,5 +66,14 @@ public class Main {
     }
     System.out.printf("Done. Final pop=%d, extant species=%d, total species ever=%d%n",
         w.population(), w.species().extantCount(), w.species().totalCount());
+
+    if (reportPath != null) {
+      try {
+        HtmlReportWriter.write(w, Path.of(reportPath));
+        System.out.println("Report written to " + reportPath);
+      } catch (IOException e) {
+        System.err.println("Failed to write report: " + e.getMessage());
+      }
+    }
   }
 }

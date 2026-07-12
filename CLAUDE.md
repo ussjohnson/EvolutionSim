@@ -13,8 +13,12 @@ javac -d bin $(find src -name '*.java')
 # PowerShell equivalent
 javac -d bin $(Get-ChildItem -Recurse src -Filter *.java | ForEach-Object FullName)
 
-# Run headless (Phase A dev/test harness)
+# Launch the GUI (default): settings screen → live sim → results
+java -cp bin evosim.Main
+
+# Run headless (dev/test harness); --report also writes an HTML report
 java -cp bin evosim.Main --headless --seed 42 --ticks 500 --width 40 --height 30 --pop 150
+java -cp bin evosim.Main --report out.html --seed 42 --ticks 500
 
 # Run the smoke/regression test (determinism + survival band)
 java -cp bin evosim.SmokeTest
@@ -22,7 +26,7 @@ java -cp bin evosim.SmokeTest
 
 ## Architecture
 
-An evolution "terrarium": animals defined by a genome of evolvable traits live on a 2D tile grid, eat (plants and/or each other), and reproduce asexually with mutation. Genomes that drift far enough apart are tracked as distinct species. The build proceeds in phases (see `.claude/plans/keen-riding-hare.md`): **A** = core model + headless engine (done), **B** = Swing map view, **C** = settings screen, **D** = stats + HTML report.
+An evolution "terrarium": animals defined by a genome of evolvable traits live on a 2D tile grid, eat (plants and/or each other), and reproduce asexually with mutation. Genomes that drift far enough apart are tracked as distinct species. All four build phases are complete (see `.claude/plans/keen-riding-hare.md`): core model, headless engine, Swing GUI (settings → live map → results), and the stats/HTML report.
 
 Packages under `src/evosim/`:
 
@@ -37,7 +41,10 @@ Packages under `src/evosim/`:
   - `RandomSource` is the single seeded RNG threaded everywhere; **no `Math.random()` in a run**, so a seed reproduces exactly.
   - `World` owns the tile grid, the animal list, the registry, and the deterministic `tick()` loop. One animal per tile (`Tile.resident` is the occupancy index; `Animal` x/y is the source of truth).
   - `Perception` scans the awareness-radius window (bounded, not O(n²)); `Behavior` is the per-animal decide/act logic (threat response → hunt → graze → reproduce → wander → rest, then upkeep).
-- **`config`** (`SimSettings`), **`ui`**, **`report`** — populated in later phases.
+  - `SimulationEngine` runs `tick()` on a daemon thread with play/pause/stop + a ticks-per-second throttle, publishing an immutable `Snapshot` per frame via `AtomicReference` for the UI. `StatsCollector` owns the sample-tick axis + global-population series (per-species history lives on `Species`).
+- **`config`** — `SimSettings` (world params + per-gene start ranges, consumed by `World.fromSettings`).
+- **`ui`** — Swing, EDT-only. `MainWindow` (CardLayout: settings → sim → results). `SettingsPanel` builds a `SimSettings`; `SimView` renders the live run (`MapPanel` + `StatsSidebar`) polling the engine snapshot via a ~30fps `Timer`; `ResultsPanel` shows the end-of-run summary (`ChartPanel` = Java2D population graph) with a "Save HTML report" button.
+- **`report`** — `SvgChart` (hand-rolled SVG line chart) and `HtmlReportWriter` (self-contained HTML: summary, population chart, species field guide, superlatives). Shared by the GUI Save button and the `--report` flag.
 
 ### Invariants to preserve
 - **Determinism:** all randomness flows through `World.rng()`; iteration is id-ordered before any seeded shuffle. Don't introduce `Math.random()`, `HashMap` iteration over model objects in the tick path, or wall-clock/threading-dependent behavior in the engine.
