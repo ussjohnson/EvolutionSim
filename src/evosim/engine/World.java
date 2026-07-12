@@ -49,22 +49,37 @@ public final class World {
   /** Build a world and seed it with {@code population} randomly placed random-genome animals. */
   public static World create(int width, int height, int population, long seed, double baseFertility) {
     World w = new World(width, height, seed, baseFertility);
-    Random r = w.rng.get();
+    w.seedPopulation(population, null, null);
+    return w;
+  }
+
+  /** Build a world from user-configured settings, honouring per-gene start ranges. */
+  public static World fromSettings(evosim.config.SimSettings s) {
+    s.sanitize();
+    World w = new World(s.width, s.height, s.seed, s.baseFertility);
+    w.seedPopulation(s.population, s.startMin, s.startMax);
+    return w;
+  }
+
+  private void seedPopulation(int population, double[] startMin, double[] startMax) {
+    Random r = rng.get();
     int attempts = 0;
     int placed = 0;
     while (placed < population && attempts < population * 20) {
       attempts++;
       int x = r.nextInt(width);
       int y = r.nextInt(height);
-      if (w.tiles[y][x].getResident() != null) continue;
-      Animal a = new Animal(Genome.random(r), w.nextId++);
+      if (tiles[y][x].getResident() != null) continue;
+      Genome genome = (startMin == null)
+          ? Genome.random(r)
+          : Genome.random(r, startMin, startMax);
+      Animal a = new Animal(genome, nextId++);
       a.setPosition(x, y);
-      a.setSpeciesId(w.species.classify(a.getGenome(), 0));
-      w.tiles[y][x].setResident(a);
-      w.animals.add(a);
+      a.setSpeciesId(species.classify(a.getGenome(), 0));
+      tiles[y][x].setResident(a);
+      animals.add(a);
       placed++;
     }
-    return w;
   }
 
   /** Advance the simulation by one tick. */

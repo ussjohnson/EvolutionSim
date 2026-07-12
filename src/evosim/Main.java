@@ -39,11 +39,7 @@ public class Main {
     if (headless) {
       runHeadless(seed, ticks, width, height, pop);
     } else {
-      SwingUtilities.invokeLater(() -> {
-        MainWindow window = new MainWindow();
-        window.setVisible(true);
-        window.startDefaultRun();
-      });
+      SwingUtilities.invokeLater(() -> new MainWindow().setVisible(true));
     }
   }
 

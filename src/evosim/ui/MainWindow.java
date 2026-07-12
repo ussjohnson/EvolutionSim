@@ -4,14 +4,15 @@ import java.awt.CardLayout;
 
 import javax.swing.JFrame;
 
+import evosim.config.SimSettings;
 import evosim.engine.SimulationEngine;
 import evosim.engine.World;
 
 /**
  * The top-level application window. Uses a {@link CardLayout} to move between
- * screens: settings → simulation → results. Phase B wires up the simulation
- * card and launches a default run; the settings and results cards arrive in
- * later phases.
+ * screens: settings → simulation (→ results, in a later phase). The user
+ * configures a run on the settings card; pressing Start builds the world and
+ * engine and switches to the live simulation card.
  */
 public final class MainWindow extends JFrame {
   private final CardLayout cards = new CardLayout();
@@ -21,17 +22,27 @@ public final class MainWindow extends JFrame {
     super("EvolutionSim");
     setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
     setLayout(cards);
-    setSize(1040, 700);
+    setSize(1040, 720);
     setLocationRelativeTo(null);
+
+    SettingsPanel settings = new SettingsPanel(this::startSimulation);
+    add(settings, "settings");
+    cards.show(getContentPane(), "settings");
   }
 
-  /** Build a world/engine and show the live simulation. (Temporary Phase-B entry.) */
-  public void startDefaultRun() {
-    World world = World.create(40, 30, 150, System.nanoTime(), 0.2);
-    SimulationEngine engine = new SimulationEngine(world, 0);
+  private void startSimulation(SimSettings settings) {
+    World world = World.fromSettings(settings);
+    SimulationEngine engine = new SimulationEngine(world, settings.durationTicks);
+
+    if (simView != null) {
+      simView.stopRendering();
+      remove(simView);
+    }
     simView = new SimView(engine);
     add(simView, "sim");
     cards.show(getContentPane(), "sim");
+    revalidate();
+    repaint();
 
     engine.startThread();
     engine.play();
