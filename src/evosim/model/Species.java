@@ -1,0 +1,102 @@
+package evosim.model;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * A taxonomic species tracked for statistics. Identity is assigned by
+ * {@link SpeciesRegistry} via online clustering of genomes. Each species keeps
+ * a running-mean {@code centroid} of its members' normalized gene vectors (so
+ * classification tracks the lineage as it drifts), plus lifetime bookkeeping
+ * and a sampled population history for the end-of-run charts.
+ */
+public final class Species {
+  private final int id;
+  private final String name;
+  private final int color;
+  private final double[] founder;   // normalized genome of the first member
+  private final double[] centroid;  // running mean of member norm vectors
+  private final int birthTick;
+
+  private int members = 0;          // living members right now
+  private int memberSamples = 0;    // total classified into this species (for the running mean)
+  private int extinctionTick = -1;
+  private int peakPopulation = 0;
+  private int totalBirths = 0;
+  private int totalDeaths = 0;
+  private int kills = 0;
+
+  // Sampled population over time (parallel to SpeciesRegistry sample ticks).
+  private final List<Integer> populationHistory = new ArrayList<>();
+
+  Species(int id, String name, int color, double[] founderNorm, int birthTick) {
+    this.id = id;
+    this.name = name;
+    this.color = color;
+    this.founder = founderNorm.clone();
+    this.centroid = founderNorm.clone();
+    this.birthTick = birthTick;
+  }
+
+  /** Fold a newly classified genome into the running-mean centroid and counts. */
+  void absorb(double[] norm) {
+    memberSamples++;
+    for (int i = 0; i < centroid.length; i++) {
+      centroid[i] += (norm[i] - centroid[i]) / memberSamples;
+    }
+    members++;
+    totalBirths++;
+    if (members > peakPopulation) peakPopulation = members;
+  }
+
+  void recordDeath(int tick) {
+    members--;
+    totalDeaths++;
+    if (members <= 0) {
+      members = 0;
+      if (extinctionTick < 0) extinctionTick = tick;
+    }
+  }
+
+  void recordKill() {
+    kills++;
+  }
+
+  void sample() {
+    populationHistory.add(members);
+    if (members > peakPopulation) peakPopulation = members;
+  }
+
+  public boolean isExtant() {
+    return members > 0;
+  }
+
+  public double distanceTo(double[] norm) {
+    double sum = 0.0;
+    for (int i = 0; i < centroid.length; i++) {
+      double d = centroid[i] - norm[i];
+      sum += d * d;
+    }
+    return Math.sqrt(sum / centroid.length);
+  }
+
+  // Getters
+  public int id() { return id; }
+  public String name() { return name; }
+  public int color() { return color; }
+  public double[] founder() { return founder; }
+  public double[] centroid() { return centroid; }
+  public int birthTick() { return birthTick; }
+  public int extinctionTick() { return extinctionTick; }
+  public int members() { return members; }
+  public int peakPopulation() { return peakPopulation; }
+  public int totalBirths() { return totalBirths; }
+  public int totalDeaths() { return totalDeaths; }
+  public int kills() { return kills; }
+  public List<Integer> populationHistory() { return populationHistory; }
+
+  public int lifespan(int currentTick) {
+    int end = (extinctionTick >= 0) ? extinctionTick : currentTick;
+    return end - birthTick;
+  }
+}
