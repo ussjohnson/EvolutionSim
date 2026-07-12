@@ -129,6 +129,29 @@ public final class World {
     return nextId++;
   }
 
+  /** Build an immutable render frame of the current state for the UI thread. */
+  public Snapshot snapshot() {
+    float[] fol = new float[width * height];
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        fol[y * width + x] = (float) tiles[y][x].getFoliage();
+      }
+    }
+    java.util.List<Snapshot.Dot> dots = new ArrayList<>(animals.size());
+    for (Animal a : animals) {
+      dots.add(new Snapshot.Dot(a.getX(), a.getY(), a.getColorInt(),
+          (float) a.getMass(), (float) a.maxMass()));
+    }
+    java.util.List<Snapshot.SpeciesCount> sc = new ArrayList<>();
+    for (evosim.model.Species s : species.all()) {
+      if (s.isExtant()) {
+        sc.add(new Snapshot.SpeciesCount(s.id(), s.name(), s.color(), s.members()));
+      }
+    }
+    sc.sort((p, q) -> Integer.compare(q.count, p.count));
+    return new Snapshot(width, height, tick, animals.size(), fol, dots, sc);
+  }
+
   // --- Accessors ---
 
   public int width() { return width; }

@@ -1,15 +1,17 @@
 package evosim;
 
+import javax.swing.SwingUtilities;
+
 import evosim.model.Balance;
 import evosim.engine.World;
+import evosim.ui.MainWindow;
 
 /**
- * Entry point. Phase A supports a headless run for development and testing:
+ * Entry point. Launches the Swing GUI by default, or runs headless for
+ * development and testing:
  *
  *   java -cp bin evosim.Main --headless [--seed N] [--ticks N]
  *                            [--width N] [--height N] [--pop N]
- *
- * The Swing GUI (default launch) arrives in Phase B.
  */
 public class Main {
   public static void main(String[] args) {
@@ -34,10 +36,15 @@ public class Main {
       }
     }
 
-    if (!headless) {
-      System.out.println("GUI not implemented yet (Phase B). Running headless.\n");
+    if (headless) {
+      runHeadless(seed, ticks, width, height, pop);
+    } else {
+      SwingUtilities.invokeLater(() -> {
+        MainWindow window = new MainWindow();
+        window.setVisible(true);
+        window.startDefaultRun();
+      });
     }
-    runHeadless(seed, ticks, width, height, pop);
   }
 
   private static void runHeadless(long seed, int ticks, int width, int height, int pop) {
