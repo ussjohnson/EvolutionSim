@@ -14,7 +14,7 @@ import java.util.Random;
  */
 public enum GeneType {
   //          min,  max,  variation, metabolicWeight
-  SIZE       ( 1.0, 10.0, 0.8, 0.20),
+  SIZE       ( 1.0, 10.0, 0.8, 0.12),
   LAND_SPEED ( 0.0,  1.0, 0.1, 0.15),
   DIET       ( 0.0,  1.0, 0.1, 0.00), // 0 = pure herbivore, 1 = pure carnivore
   TOLERANCE  ( 0.0,  1.0, 0.1, 0.00), // how carnivorous another must be to read as a threat
