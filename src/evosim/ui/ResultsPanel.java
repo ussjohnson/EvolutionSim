@@ -18,17 +18,20 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.table.DefaultTableModel;
 
 import evosim.engine.SimTime;
 import evosim.engine.World;
 import evosim.model.Species;
+import evosim.model.SpeciesLineage;
 import evosim.report.HtmlReportWriter;
 
 /**
- * The end-of-run summary screen: headline stats, an embedded population chart,
- * a species table, and buttons to save the full HTML report or start a new run.
+ * The end-of-run summary screen: headline stats, a species family-tree stream
+ * chart, a browsable taxonomy tree and a detailed species table (as tabs), and
+ * buttons to save the full HTML report or start a new run.
  */
 public final class ResultsPanel extends JPanel {
   private static final int SIGNIFICANT_PEAK = 2;
@@ -65,13 +68,14 @@ public final class ResultsPanel extends JPanel {
 
     int[] xTicks = toIntArray(world.stats().sampleTicks());
     int samples = xTicks.length;
-    List<ChartPanel.Line> lines = new ArrayList<>();
-    for (int i = 0; i < Math.min(MAX_CHART_LINES, significant.size()); i++) {
-      Species s = significant.get(i);
-      lines.add(new ChartPanel.Line(new Color(s.color()), leftPad(s.populationHistory(), samples)));
+    List<Species> lineageOrder = SpeciesLineage.dfsOrder(significant);
+    List<StreamChartPanel.Band> bands = new ArrayList<>();
+    for (int i = 0; i < Math.min(MAX_CHART_LINES, lineageOrder.size()); i++) {
+      Species s = lineageOrder.get(i);
+      bands.add(new StreamChartPanel.Band(new Color(s.color()), leftPad(s.populationHistory(), samples)));
     }
-    ChartPanel chart = new ChartPanel(xTicks, lines);
-    chart.setBorder(BorderFactory.createTitledBorder("Species populations over time"));
+    StreamChartPanel chart = new StreamChartPanel(xTicks, bands);
+    chart.setBorder(BorderFactory.createTitledBorder("Species family tree & population over time"));
 
     DefaultTableModel model = new DefaultTableModel(
         new Object[] { "Species", "Description", "Evolved From", "Lifespan", "Avg Age at Death",
@@ -93,9 +97,13 @@ public final class ResultsPanel extends JPanel {
     JTable table = new JTable(model);
     table.setRowHeight(22);
 
+    JTabbedPane tabs = new JTabbedPane();
+    tabs.addTab("Family Tree", new SpeciesTreePanel(significant));
+    tabs.addTab("Species Table", new JScrollPane(table));
+
     JPanel center = new JPanel(new BorderLayout(0, 10));
     center.add(chart, BorderLayout.NORTH);
-    center.add(new JScrollPane(table), BorderLayout.CENTER);
+    center.add(tabs, BorderLayout.CENTER);
     return center;
   }
 

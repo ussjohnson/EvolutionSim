@@ -13,6 +13,7 @@ import evosim.engine.StatsCollector;
 import evosim.engine.World;
 import evosim.model.GeneType;
 import evosim.model.Species;
+import evosim.model.SpeciesLineage;
 import evosim.model.SpeciesRegistry;
 
 /**
@@ -44,14 +45,19 @@ public final class HtmlReportWriter {
     int[] xTicks = toIntArray(stats.sampleTicks());
     int samples = xTicks.length;
 
-    // Chart series (top species by peak), left-padded to the shared axis.
+    // Chart series in lineage (depth-first) order, left-padded to the shared
+    // axis, so each species' band sits directly beside its parent's — a
+    // child's band visibly splits off at its founding tick. DFS order is a
+    // valid prefix-truncatable forest ordering, so simply capping the list
+    // can't orphan a shown child from an unshown parent.
+    List<Species> lineageOrder = SpeciesLineage.dfsOrder(significant);
     List<SvgChart.Series> series = new ArrayList<>();
-    for (int i = 0; i < Math.min(MAX_CHART_LINES, significant.size()); i++) {
-      Species s = significant.get(i);
+    for (int i = 0; i < Math.min(MAX_CHART_LINES, lineageOrder.size()); i++) {
+      Species s = lineageOrder.get(i);
       series.add(new SvgChart.Series(s.name(), toHex(s.color()),
           leftPad(s.populationHistory(), samples)));
     }
-    String chart = SvgChart.lineChart("Species populations over time", xTicks, series, 860, 420);
+    String chart = SvgChart.streamChart("Species family tree & population over time", xTicks, series, 860, 420);
 
     StringBuilder html = new StringBuilder();
     html.append("<!doctype html>\n<html lang='en'><head><meta charset='utf-8'>\n");
@@ -68,6 +74,9 @@ public final class HtmlReportWriter {
         .append(".chart{background:#fff;border:1px solid #e2e2e2;border-radius:8px;padding:8px;display:inline-block;}")
         .append("details{font-size:12px;} details summary{cursor:pointer;color:#3366aa;}")
         .append(".genes{margin:4px 0 0;padding-left:16px;color:#444;}")
+        .append(".taxonomy{list-style:none;padding-left:18px;}")
+        .append(".taxonomy>li{margin:4px 0;} .taxonomy .row{font-size:13px;}")
+        .append(".taxonomy .stat{color:#777;font-size:11px;margin-left:4px;}")
         .append("</style>\n</head>\n<body>\n");
 
     html.append("<h1>EvolutionSim Report</h1>\n");
@@ -83,9 +92,12 @@ public final class HtmlReportWriter {
     card(html, ephemeralCount, "ephemeral variants (peak &lt;" + SIGNIFICANT_PEAK + ")");
     html.append("</div>\n");
 
-    html.append("<h2>Populations over time</h2>\n<div class='chart'>").append(chart).append("</div>\n");
+    html.append("<h2>Family tree</h2>\n<div class='chart'>").append(chart).append("</div>\n");
 
     appendSuperlatives(html, significant, endTick);
+
+    html.append("<h2>Taxonomy</h2>\n");
+    appendTaxonomyOutline(html, significant);
 
     html.append("<h2>Species field guide</h2>\n");
     html.append("<table>\n<tr><th>Species</th><th>Description</th><th>Evolved From</th>"
@@ -119,6 +131,33 @@ public final class HtmlReportWriter {
 
     html.append("</body></html>\n");
     Files.write(out, html.toString().getBytes(StandardCharsets.UTF_8));
+  }
+
+  /** A nested, indented outline of the species tree (root founders down to their descendants). */
+  private static void appendTaxonomyOutline(StringBuilder html, List<Species> significant) {
+    if (significant.isEmpty()) return;
+    java.util.Map<Integer, List<Species>> children = SpeciesLineage.childrenByParent(significant);
+    html.append("<ul class='taxonomy'>\n");
+    for (Species root : SpeciesLineage.roots(significant)) {
+      appendTaxonomyNode(html, root, children);
+    }
+    html.append("</ul>\n");
+  }
+
+  private static void appendTaxonomyNode(StringBuilder html, Species s, java.util.Map<Integer, List<Species>> children) {
+    html.append("<li><div class='row'><span class='sw' style='background:").append(toHex(s.color())).append("'></span>")
+        .append("<b>").append(esc(s.name())).append("</b>").append(s.isExtant() ? "" : " <em>(extinct)</em>")
+        .append("<span class='stat'>").append(esc(describe(s.founder())))
+        .append(" &middot; peak ").append(s.peakPopulation()).append("</span></div>\n");
+    List<Species> kids = children.get(s.id());
+    if (kids != null && !kids.isEmpty()) {
+      html.append("<ul class='taxonomy'>\n");
+      for (Species child : kids) {
+        appendTaxonomyNode(html, child, children);
+      }
+      html.append("</ul>\n");
+    }
+    html.append("</li>\n");
   }
 
   private static void appendSuperlatives(StringBuilder html, List<Species> sp, int endTick) {
