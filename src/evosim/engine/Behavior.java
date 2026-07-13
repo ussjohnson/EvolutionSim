@@ -165,6 +165,12 @@ final class Behavior {
       a.kill();
       w.removeFromGrid(a);
       w.species().recordDeath(a.getSpeciesId(), w.currentTick(), Species.DeathCause.STARVATION, a.getBirthTick());
+      return;
+    }
+    if (w.rng().get().nextDouble() < a.agingDeathChance(w.currentTick())) {
+      a.kill();
+      w.removeFromGrid(a);
+      w.species().recordDeath(a.getSpeciesId(), w.currentTick(), Species.DeathCause.OLD_AGE, a.getBirthTick());
     }
   }
 

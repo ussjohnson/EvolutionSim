@@ -94,6 +94,31 @@ public class Animal {
     return (int) Math.round(genome.value(GeneType.AWARENESS));
   }
 
+  /**
+   * How fast this animal's biological clock runs relative to a "typical"
+   * animal (rate-of-living theory): burning energy faster than average
+   * (higher {@link #metabolism()}) speeds it up, and SIZE slows it down via
+   * the same Kleiber's-law economy of scale that already discounts SIZE's
+   * raw upkeep. Never a free win either way — whatever shortens this pace
+   * already costs energy, growth time, or stealth elsewhere.
+   */
+  public double agingPace() {
+    double metabolicFactor = metabolism() / Balance.AGING_REFERENCE_METABOLISM;
+    double sizeProtection = 1.0 - Balance.AGING_SIZE_PROTECTION * n(GeneType.SIZE);
+    return metabolicFactor * sizeProtection;
+  }
+
+  /**
+   * Per-tick probability of dying of old age: a Gompertz hazard (risk rises
+   * exponentially with age, the standard actuarial aging model) evaluated at
+   * this animal's own {@link #agingPace()} rather than raw calendar age.
+   */
+  public double agingDeathChance(int currentTick) {
+    double effectiveAge = Math.max(0, currentTick - birthTick) * agingPace();
+    double hazard = Balance.AGING_H0 * Math.exp(Balance.AGING_K * effectiveAge);
+    return Math.min(1.0, hazard);
+  }
+
   /** Stealth after the size penalty — big animals simply can't hide well. */
   public double effectiveStealth() {
     return n(GeneType.STEALTH) * (1.0 - 0.5 * n(GeneType.SIZE));

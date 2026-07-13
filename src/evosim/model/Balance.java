@@ -114,6 +114,29 @@ public final class Balance {
   // Settings were already documented to do.
   public static double FOUNDER_GENE_BAND = 0.15;
 
+  // --- Aging ---
+  // A Gompertz hazard (the standard actuarial aging model: risk of death from
+  // senescence rises exponentially with age) rather than a hard lifespan cap,
+  // evaluated against each animal's own "pace of life" (see
+  // Animal#agingPace) instead of raw calendar age — so genetics shift *when*
+  // the curve bites without anyone being exempt from it. AGING_H0/AGING_K
+  // shape the baseline curve for an animal at reference pace (pace = 1.0):
+  // hazard is negligible for ~1000 ticks, then climbs sharply, reaching ~5%
+  // per tick by age 2000 and >45% per tick by age 2500 — well beyond the
+  // ~150-900 tick lifespans starvation/predation already produce in most
+  // runs, so old age is a real cause of death only for lineages that are
+  // otherwise safe and well-fed long enough to reach it, not a dominant one.
+  public static double AGING_H0 = 5e-6;
+  public static double AGING_K = 0.0046;
+  // "Typical" metabolism (empirically, the average across random genomes),
+  // used so an animal at exactly this rate has aging-pace multiplier 1.0.
+  public static double AGING_REFERENCE_METABOLISM = 0.34;
+  // Fraction by which max SIZE slows the aging clock — the same Kleiber's-law
+  // economy of scale that already discounts SIZE's raw metabolic upkeep, so
+  // a long life is bought with the SIZE tradeoffs that already exist
+  // (slower growth, more food needed, worse stealth), not a free perk.
+  public static double AGING_SIZE_PROTECTION = 0.5;
+
   // --- Sampling / reporting ---
   public static int SAMPLE_INTERVAL = 5;          // ticks between population samples
 }
