@@ -28,20 +28,42 @@ public final class Snapshot {
     this.species = species;
   }
 
-  /** A single animal to draw: grid position, colour, and mass (for icon size). */
+  /**
+   * A single animal: grid position and colour/mass for drawing, plus enough
+   * per-individual state (id, species, vitals, full genome) for the results
+   * screen's click-to-inspect tile/animal panel.
+   */
   public static final class Dot {
+    public final int id;
     public final int x;
     public final int y;
     public final int rgb;
     public final float mass;
     public final float maxMass;
+    public final int speciesId;
+    public final int birthTick;
+    public final float energy;
+    public final float maxEnergy;
+    public final float hp;
+    public final float maxHp;
+    public final double[] genomeNorm; // GeneType order, for the inspector's full-genome view
 
-    public Dot(int x, int y, int rgb, float mass, float maxMass) {
+    public Dot(int id, int x, int y, int rgb, float mass, float maxMass, int speciesId,
+               int birthTick, float energy, float maxEnergy, float hp, float maxHp,
+               double[] genomeNorm) {
+      this.id = id;
       this.x = x;
       this.y = y;
       this.rgb = rgb;
       this.mass = mass;
       this.maxMass = maxMass;
+      this.speciesId = speciesId;
+      this.birthTick = birthTick;
+      this.energy = energy;
+      this.maxEnergy = maxEnergy;
+      this.hp = hp;
+      this.maxHp = maxHp;
+      this.genomeNorm = genomeNorm;
     }
   }
 

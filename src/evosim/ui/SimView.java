@@ -10,6 +10,7 @@ import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSlider;
+import javax.swing.JSplitPane;
 import javax.swing.Timer;
 
 import evosim.engine.SimTime;
@@ -17,15 +18,17 @@ import evosim.engine.SimulationEngine;
 import evosim.engine.Snapshot;
 
 /**
- * The live-simulation screen: the map, the species sidebar, and a control bar
- * (play/pause, stop, speed slider, tick/population readout). A ~30 fps Swing
- * {@link Timer} on the EDT polls the engine's latest snapshot and repaints —
- * the only bridge between the UI and the background engine thread.
+ * The live-simulation screen: the map, the species sidebar, an inspector for
+ * a clicked tile/animal, and a control bar (play/pause, stop, speed slider,
+ * tick/population readout). A ~30 fps Swing {@link Timer} on the EDT polls
+ * the engine's latest snapshot and repaints — the only bridge between the UI
+ * and the background engine thread.
  */
 public final class SimView extends JPanel {
   private final SimulationEngine engine;
   private final MapPanel map = new MapPanel();
   private final StatsSidebar sidebar = new StatsSidebar();
+  private final InspectorPanel inspector = new InspectorPanel();
   private final JButton playPause = new JButton("Play");
   private final JLabel status = new JLabel("tick 0   pop 0");
   private final Timer repaintTimer;
@@ -35,8 +38,18 @@ public final class SimView extends JPanel {
     this.engine = engine;
 
     add(map, BorderLayout.CENTER);
-    add(sidebar, BorderLayout.EAST);
+    JSplitPane east = new JSplitPane(JSplitPane.VERTICAL_SPLIT, sidebar, inspector);
+    east.setResizeWeight(0.55);
+    east.setDividerLocation(320);
+    east.setPreferredSize(new java.awt.Dimension(240, 600));
+    add(east, BorderLayout.EAST);
     add(buildControls(), BorderLayout.SOUTH);
+
+    map.onTileClick((x, y) -> {
+      map.setSelectedTile(x, y);
+      inspector.setSelectedTile(x, y);
+      inspector.refresh();
+    });
 
     repaintTimer = new Timer(33, e -> refresh());
   }
@@ -87,6 +100,8 @@ public final class SimView extends JPanel {
     Snapshot s = engine.latest();
     map.setSnapshot(s);
     sidebar.setSnapshot(s);
+    inspector.setSnapshot(s);
+    inspector.refresh();
     if (s != null) {
       status.setText(SimTime.format(s.tick) + " (tick " + s.tick + ")   pop " + s.population
           + "   species " + s.species.size());

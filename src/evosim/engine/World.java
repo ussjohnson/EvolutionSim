@@ -159,8 +159,10 @@ public final class World {
     }
     java.util.List<Snapshot.Dot> dots = new ArrayList<>(animals.size());
     for (Animal a : animals) {
-      dots.add(new Snapshot.Dot(a.getX(), a.getY(), a.getColorInt(),
-          (float) a.getMass(), (float) a.maxMass()));
+      dots.add(new Snapshot.Dot(a.getId(), a.getX(), a.getY(), a.getColorInt(),
+          (float) a.getMass(), (float) a.maxMass(), a.getSpeciesId(), a.getBirthTick(),
+          (float) a.getEnergy(), (float) a.maxEnergy(), (float) a.getHp(), (float) a.maxHp(),
+          a.getGenome().normVector()));
     }
     java.util.List<Snapshot.SpeciesCount> sc = new ArrayList<>();
     for (evosim.model.Species s : species.all()) {
