@@ -11,12 +11,16 @@ import java.util.List;
  * and a sampled population history for the end-of-run charts.
  */
 public final class Species {
+  /** What killed a member: starvation (ran out of energy) or a predator's kill. */
+  public enum DeathCause { STARVATION, PREDATION }
+
   private final int id;
   private final String name;
   private final int color;
   private final double[] founder;   // normalized genome of the first member
   private final double[] centroid;  // running mean of member norm vectors
   private final int birthTick;
+  private final int parentSpeciesId; // -1 if founded by the initial population (no ancestor)
 
   private int members = 0;          // living members right now
   private int memberSamples = 0;    // total classified into this species (for the running mean)
@@ -25,17 +29,21 @@ public final class Species {
   private int totalBirths = 0;
   private int totalDeaths = 0;
   private int kills = 0;
+  private int starvationDeaths = 0;
+  private int predationDeaths = 0;
+  private long totalLifetimeTicks = 0; // accumulated age-at-death, for the average
 
   // Sampled population over time (parallel to SpeciesRegistry sample ticks).
   private final List<Integer> populationHistory = new ArrayList<>();
 
-  Species(int id, String name, int color, double[] founderNorm, int birthTick) {
+  Species(int id, String name, int color, double[] founderNorm, int birthTick, int parentSpeciesId) {
     this.id = id;
     this.name = name;
     this.color = color;
     this.founder = founderNorm.clone();
     this.centroid = founderNorm.clone();
     this.birthTick = birthTick;
+    this.parentSpeciesId = parentSpeciesId;
   }
 
   /** Fold a newly classified genome into the running-mean centroid and counts. */
@@ -49,9 +57,12 @@ public final class Species {
     if (members > peakPopulation) peakPopulation = members;
   }
 
-  void recordDeath(int tick) {
+  void recordDeath(int tick, DeathCause cause, int bornAtTick) {
     members--;
     totalDeaths++;
+    totalLifetimeTicks += Math.max(0, tick - bornAtTick);
+    if (cause == DeathCause.STARVATION) starvationDeaths++;
+    else predationDeaths++;
     if (members <= 0) {
       members = 0;
       if (extinctionTick < 0) extinctionTick = tick;
@@ -80,6 +91,17 @@ public final class Species {
     return Math.sqrt(sum / centroid.length);
   }
 
+  /** "starvation", "predation", or "none yet" if nobody has died. */
+  public String primaryCauseOfDeath() {
+    if (starvationDeaths == 0 && predationDeaths == 0) return "none yet";
+    return (starvationDeaths >= predationDeaths) ? "starvation" : "predation";
+  }
+
+  /** Mean age-at-death of members that have died, in ticks; 0 if nobody has died. */
+  public double averageMemberLifespan() {
+    return (totalDeaths == 0) ? 0.0 : (double) totalLifetimeTicks / totalDeaths;
+  }
+
   // Getters
   public int id() { return id; }
   public String name() { return name; }
@@ -87,12 +109,15 @@ public final class Species {
   public double[] founder() { return founder; }
   public double[] centroid() { return centroid; }
   public int birthTick() { return birthTick; }
+  public int parentSpeciesId() { return parentSpeciesId; }
   public int extinctionTick() { return extinctionTick; }
   public int members() { return members; }
   public int peakPopulation() { return peakPopulation; }
   public int totalBirths() { return totalBirths; }
   public int totalDeaths() { return totalDeaths; }
   public int kills() { return kills; }
+  public int starvationDeaths() { return starvationDeaths; }
+  public int predationDeaths() { return predationDeaths; }
   public List<Integer> populationHistory() { return populationHistory; }
 
   public int lifespan(int currentTick) {

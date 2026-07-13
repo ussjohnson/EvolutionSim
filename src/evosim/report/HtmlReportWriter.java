@@ -8,10 +8,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import evosim.engine.SimTime;
 import evosim.engine.StatsCollector;
 import evosim.engine.World;
 import evosim.model.GeneType;
 import evosim.model.Species;
+import evosim.model.SpeciesRegistry;
 
 /**
  * Writes a single, self-contained HTML report of a finished (or stopped) run:
@@ -64,12 +66,15 @@ public final class HtmlReportWriter {
         .append("th,td{border:1px solid #e2e2e2;padding:6px 10px;text-align:left;font-size:13px;}")
         .append("th{background:#f0f0f0;} .sw{display:inline-block;width:12px;height:12px;border:1px solid #999;vertical-align:middle;margin-right:6px;}")
         .append(".chart{background:#fff;border:1px solid #e2e2e2;border-radius:8px;padding:8px;display:inline-block;}")
+        .append("details{font-size:12px;} details summary{cursor:pointer;color:#3366aa;}")
+        .append(".genes{margin:4px 0 0;padding-left:16px;color:#444;}")
         .append("</style>\n</head>\n<body>\n");
 
     html.append("<h1>EvolutionSim Report</h1>\n");
     html.append("<p class='sub'>seed ").append(w.seed())
         .append(" &middot; map ").append(w.width()).append("×").append(w.height())
-        .append(" &middot; ").append(endTick).append(" ticks elapsed</p>\n");
+        .append(" &middot; ").append(esc(SimTime.format(endTick)))
+        .append(" (").append(endTick).append(" ticks) elapsed</p>\n");
 
     html.append("<div class='cards'>\n");
     card(html, w.population(), "final population");
@@ -83,17 +88,25 @@ public final class HtmlReportWriter {
     appendSuperlatives(html, significant, endTick);
 
     html.append("<h2>Species field guide</h2>\n");
-    html.append("<table>\n<tr><th>Species</th><th>Description</th><th>Lifespan</th>"
-        + "<th>Peak</th><th>Births</th><th>Deaths</th><th>Kills</th></tr>\n");
+    html.append("<table>\n<tr><th>Species</th><th>Description</th><th>Evolved From</th>"
+        + "<th>Lifespan</th><th>Avg Age at Death</th><th>Peak</th><th>Births</th><th>Deaths</th>"
+        + "<th>Cause of Death</th><th>Kills</th></tr>\n");
+    SpeciesRegistry registry = w.species();
     for (Species s : significant) {
+      String parent = registry.parentNameOf(s);
       html.append("<tr>")
           .append("<td><span class='sw' style='background:").append(toHex(s.color())).append("'></span>")
-          .append(esc(s.name())).append(s.isExtant() ? "" : " <em>(extinct)</em>").append("</td>")
+          .append(esc(s.name())).append(s.isExtant() ? "" : " <em>(extinct)</em>")
+          .append(detailsGenes(s.founder())).append("</td>")
           .append("<td>").append(esc(describe(s.founder()))).append("</td>")
+          .append("<td>").append(parent != null ? esc(parent) : "&mdash;").append("</td>")
           .append("<td>").append(s.lifespan(endTick)).append(" t</td>")
+          .append("<td>").append(s.totalDeaths() > 0
+              ? Math.round(s.averageMemberLifespan()) + " t" : "&mdash;").append("</td>")
           .append("<td>").append(s.peakPopulation()).append("</td>")
           .append("<td>").append(s.totalBirths()).append("</td>")
           .append("<td>").append(s.totalDeaths()).append("</td>")
+          .append("<td>").append(esc(s.primaryCauseOfDeath())).append("</td>")
           .append("<td>").append(s.kills()).append("</td>")
           .append("</tr>\n");
     }
@@ -124,6 +137,17 @@ public final class HtmlReportWriter {
     html.append("<li><b>Most carnivorous lineage:</b> ").append(esc(carnivore.name()))
         .append(" (diet ").append(pct(carnivore.founder()[GeneType.DIET.ordinal()])).append(")</li>\n");
     html.append("</ul>\n");
+  }
+
+  /** A collapsible &lt;details&gt; block listing every gene's normalized value. */
+  private static String detailsGenes(double[] n) {
+    StringBuilder sb = new StringBuilder("<details><summary>full genome</summary><ul class='genes'>");
+    for (GeneType t : GeneType.ALL) {
+      sb.append("<li>").append(esc(t.name())).append(": ")
+          .append(pct(n[t.ordinal()])).append("</li>");
+    }
+    sb.append("</ul></details>");
+    return sb.toString();
   }
 
   /** A short natural-language description of a founder's normalized genome. */

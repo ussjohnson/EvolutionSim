@@ -12,6 +12,7 @@ import javax.swing.JPanel;
 import javax.swing.JSlider;
 import javax.swing.Timer;
 
+import evosim.engine.SimTime;
 import evosim.engine.SimulationEngine;
 import evosim.engine.Snapshot;
 
@@ -87,7 +88,8 @@ public final class SimView extends JPanel {
     map.setSnapshot(s);
     sidebar.setSnapshot(s);
     if (s != null) {
-      status.setText("tick " + s.tick + "   pop " + s.population + "   species " + s.species.size());
+      status.setText(SimTime.format(s.tick) + " (tick " + s.tick + ")   pop " + s.population
+          + "   species " + s.species.size());
     }
     if (engine.state() == SimulationEngine.State.STOPPED) {
       playPause.setText("Play");

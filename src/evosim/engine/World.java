@@ -78,7 +78,7 @@ public final class World {
           : Genome.random(r, startMin, startMax);
       Animal a = new Animal(genome, nextId++);
       a.setPosition(x, y);
-      a.setSpeciesId(species.classify(a.getGenome(), 0));
+      a.setSpeciesId(species.classify(a.getGenome(), 0, evosim.model.SpeciesRegistry.NO_PARENT));
       tiles[y][x].setResident(a);
       animals.add(a);
       placed++;

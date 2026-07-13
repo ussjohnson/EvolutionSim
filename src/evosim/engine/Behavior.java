@@ -9,6 +9,7 @@ import evosim.model.Animal;
 import evosim.model.Balance;
 import evosim.model.GeneType;
 import evosim.model.Genome;
+import evosim.model.Species;
 
 /**
  * The per-animal decision and action logic for a single tick: perceive,
@@ -128,7 +129,7 @@ final class Behavior {
     if (b.getHp() <= 0) {
       b.kill();
       w.removeFromGrid(b);
-      w.species().recordDeath(b.getSpeciesId(), w.currentTick());
+      w.species().recordDeath(b.getSpeciesId(), w.currentTick(), Species.DeathCause.PREDATION, b.getBirthTick());
       w.species().recordKill(a.getSpeciesId());
       a.addEnergy(b.getMass() * Balance.MEAT_ENERGY * a.n(GeneType.DIET));
     }
@@ -139,10 +140,11 @@ final class Behavior {
     if (spot == null) return false;
     Genome childGenome = a.getGenome().mutatedCopy(w.rng().get());
     Animal child = new Animal(childGenome, w.nextId());
+    child.setBirthTick(w.currentTick());
     double invest = a.getEnergy() * Balance.OFFSPRING_ENERGY_FRACTION;
     a.setEnergy(a.getEnergy() - invest);
     child.setEnergy(Math.min(invest, child.maxEnergy()));
-    child.setSpeciesId(w.species().classify(childGenome, w.currentTick()));
+    child.setSpeciesId(w.species().classify(childGenome, w.currentTick(), a.getSpeciesId()));
     w.placeNewborn(child, spot[0], spot[1]);
     newborns.add(child);
     return true;
@@ -162,7 +164,7 @@ final class Behavior {
     if (a.getEnergy() <= 0) {
       a.kill();
       w.removeFromGrid(a);
-      w.species().recordDeath(a.getSpeciesId(), w.currentTick());
+      w.species().recordDeath(a.getSpeciesId(), w.currentTick(), Species.DeathCause.STARVATION, a.getBirthTick());
     }
   }
 

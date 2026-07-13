@@ -21,6 +21,7 @@ public class Animal {
   private double energy;
   private double hp;
   private int speciesId = -1;
+  private int birthTick = 0;
   private boolean alive = true;
 
   public Animal(Genome genome, int id) {
@@ -99,22 +100,11 @@ public class Animal {
   }
 
   /**
-   * Packed 0xRRGGBB display colour: red = carnivory (DIET), green = FECUNDITY,
-   * blue = LAND_SPEED. Size deliberately does not affect colour (it sizes the
-   * on-screen icon instead).
+   * Display colour (see {@link Coloring}). Size deliberately does not affect
+   * colour (it sizes the on-screen icon instead).
    */
   public final int calcColor() {
-    int r = clamp255(n(GeneType.DIET));
-    int g = clamp255(n(GeneType.FECUNDITY));
-    int b = clamp255(n(GeneType.LAND_SPEED));
-    return (r << 16) | (g << 8) | b;
-  }
-
-  private static int clamp255(double norm) {
-    int v = (int) Math.round(norm * 255.0);
-    if (v < 0) v = 0;
-    if (v > 255) v = 255;
-    return v;
+    return Coloring.pack(n(GeneType.DIET), n(GeneType.FECUNDITY), n(GeneType.LAND_SPEED));
   }
 
   public String getColorHex() {
@@ -160,6 +150,8 @@ public class Animal {
   public double getHp() { return hp; }
   public int getSpeciesId() { return speciesId; }
   public void setSpeciesId(int speciesId) { this.speciesId = speciesId; }
+  public int getBirthTick() { return birthTick; }
+  public void setBirthTick(int birthTick) { this.birthTick = birthTick; }
   public boolean isAlive() { return alive; }
 
   /** True once reserves are low enough that the animal wants to feed. */

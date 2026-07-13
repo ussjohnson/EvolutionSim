@@ -21,6 +21,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.table.DefaultTableModel;
 
+import evosim.engine.SimTime;
 import evosim.engine.World;
 import evosim.model.Species;
 import evosim.report.HtmlReportWriter;
@@ -50,8 +51,8 @@ public final class ResultsPanel extends JPanel {
     JLabel title = new JLabel("Simulation Complete");
     title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
     JLabel sub = new JLabel(String.format(
-        "seed %d   ·   %d ticks   ·   final pop %d   ·   %d species alive of %d ever",
-        world.seed(), world.currentTick(), world.population(),
+        "seed %d   ·   %s (%d ticks)   ·   final pop %d   ·   %d species alive of %d ever",
+        world.seed(), SimTime.format(world.currentTick()), world.currentTick(), world.population(),
         world.species().extantCount(), world.species().totalCount()));
     sub.setForeground(new Color(0x555555));
     p.add(title, BorderLayout.NORTH);
@@ -73,16 +74,21 @@ public final class ResultsPanel extends JPanel {
     chart.setBorder(BorderFactory.createTitledBorder("Species populations over time"));
 
     DefaultTableModel model = new DefaultTableModel(
-        new Object[] { "Species", "Description", "Lifespan", "Peak", "Births", "Deaths", "Kills" }, 0) {
+        new Object[] { "Species", "Description", "Evolved From", "Lifespan", "Avg Age at Death",
+            "Peak", "Births", "Deaths", "Cause of Death", "Kills" }, 0) {
       @Override public boolean isCellEditable(int r, int c) { return false; }
     };
     int end = world.currentTick();
     for (Species s : significant) {
+      String parent = world.species().parentNameOf(s);
       model.addRow(new Object[] {
           s.name() + (s.isExtant() ? "" : " (extinct)"),
           HtmlReportWriter.describe(s.founder()),
-          s.lifespan(end) + " t", s.peakPopulation(),
-          s.totalBirths(), s.totalDeaths(), s.kills() });
+          (parent != null) ? parent : "—",
+          s.lifespan(end) + " t",
+          (s.totalDeaths() > 0) ? String.format("%.0f t", s.averageMemberLifespan()) : "—",
+          s.peakPopulation(),
+          s.totalBirths(), s.totalDeaths(), s.primaryCauseOfDeath(), s.kills() });
     }
     JTable table = new JTable(model);
     table.setRowHeight(22);

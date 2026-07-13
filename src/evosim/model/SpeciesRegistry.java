@@ -10,18 +10,27 @@ import java.util.List;
  * extant species. If the nearest is within {@link Balance#SPECIATION_THRESHOLD}
  * it joins that species (and nudges its centroid); otherwise a brand-new species
  * is founded, named from the founder's normalized genome — the same vector the
- * distance metric uses, so related species get related names.
+ * distance metric uses, so related species get related names — and recorded as
+ * descending from whichever species its parent animal belonged to.
  *
  * Comparing against a running-mean centroid (rather than the fixed founder)
  * keeps a slowly drifting lineage as one species instead of spawning a new one
  * every few generations.
  */
 public final class SpeciesRegistry {
+  /** No ancestor: used when founding species from the initial random population. */
+  public static final int NO_PARENT = -1;
+
   private final List<Species> all = new ArrayList<>();
   private int nextId = 0;
 
-  /** Classify a genome, joining or founding a species, and return its id. */
-  public int classify(Genome genome, int tick) {
+  /**
+   * Classify a genome, joining or founding a species, and return its id.
+   * @param parentSpeciesId the species of the animal that produced this genome
+   *        (its parent, for a birth), or {@link #NO_PARENT} for the initial
+   *        random population, which has no in-sim ancestor.
+   */
+  public int classify(Genome genome, int tick, int parentSpeciesId) {
     double[] norm = genome.normVector();
     Species best = null;
     double bestDist = Double.MAX_VALUE;
@@ -38,15 +47,15 @@ public final class SpeciesRegistry {
       return best.id();
     }
     Species founded = new Species(nextId++, NameGenerator.nameFor(norm),
-        colorFromNorm(norm), norm, tick);
+        Coloring.fromNorm(norm), norm, tick, parentSpeciesId);
     founded.absorb(norm);
     all.add(founded);
     return founded.id();
   }
 
-  public void recordDeath(int speciesId, int tick) {
+  public void recordDeath(int speciesId, int tick, Species.DeathCause cause, int bornAtTick) {
     Species s = byId(speciesId);
-    if (s != null) s.recordDeath(tick);
+    if (s != null) s.recordDeath(tick, cause, bornAtTick);
   }
 
   public void recordKill(int speciesId) {
@@ -75,6 +84,13 @@ public final class SpeciesRegistry {
     return null;
   }
 
+  /** The parent species' name, or null if this species has no in-sim ancestor. */
+  public String parentNameOf(Species s) {
+    if (s.parentSpeciesId() == NO_PARENT) return null;
+    Species parent = byId(s.parentSpeciesId());
+    return (parent != null) ? parent.name() : null;
+  }
+
   public List<Species> all() {
     return all;
   }
@@ -89,20 +105,5 @@ public final class SpeciesRegistry {
 
   public int totalCount() {
     return all.size();
-  }
-
-  /** Same colour derivation as Animal (red=diet, green=fecundity, blue=speed). */
-  private static int colorFromNorm(double[] norm) {
-    int r = clamp255(norm[GeneType.DIET.ordinal()]);
-    int g = clamp255(norm[GeneType.FECUNDITY.ordinal()]);
-    int b = clamp255(norm[GeneType.LAND_SPEED.ordinal()]);
-    return (r << 16) | (g << 8) | b;
-  }
-
-  private static int clamp255(double norm) {
-    int v = (int) Math.round(norm * 255.0);
-    if (v < 0) v = 0;
-    if (v > 255) v = 255;
-    return v;
   }
 }
