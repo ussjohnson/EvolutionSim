@@ -44,18 +44,37 @@ public class Animal {
     return genome.value(GeneType.SIZE);
   }
 
-  /** Resting energy cost per tick. Costly traits add upkeep, all amplified by size. */
+  /**
+   * Resting energy cost per tick. Costly traits (strength, speed, awareness,
+   * etc.) add upkeep at a rate that *shrinks* with SIZE — a bounded economy
+   * of scale (in the spirit of Kleiber's law: larger bodies run their active
+   * machinery more efficiently per unit of capability). The flat baseline
+   * (BASE_META) is unaffected — every animal pays some fixed upkeep
+   * regardless of size.
+   */
   public double metabolism() {
     double sum = 0.0;
     for (GeneType t : GeneType.ALL) {
       sum += t.metabolicWeight() * n(t);
     }
-    return Balance.BASE_META + sum * (1.0 + Balance.SIZE_META_SCALE * n(GeneType.SIZE));
+    double economyOfScale = 1.0 - Balance.SIZE_METABOLIC_DISCOUNT * n(GeneType.SIZE);
+    return Balance.BASE_META + sum * economyOfScale;
   }
 
   /** Energy spent per tile of movement. */
   public double moveCost() {
     return Balance.MOVE_K * mass * (0.5 + n(GeneType.LAND_SPEED));
+  }
+
+  /**
+   * Foliage this animal can consume from a tile in one graze. Scales with body
+   * mass (a bigger mouth/gut), so large herbivores aren't out-foraged by tiny
+   * ones whose flat intake vastly exceeds their needs. Big grazers tend to
+   * strip a tile in one bite and must roam — paying movement energy — which
+   * keeps size a genuine tradeoff rather than a free win.
+   */
+  public double grazeCapacity() {
+    return Balance.APPETITE * (0.5 + Balance.APPETITE_MASS_SCALE * mass);
   }
 
   /** Energy reserve capacity — larger animals bank more. */

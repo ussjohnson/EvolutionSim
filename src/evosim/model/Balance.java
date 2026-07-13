@@ -7,20 +7,25 @@ package evosim.model;
  *
  * The defaults below were empirically tuned (see the survival-band checks in
  * {@code SmokeTest} and an ad-hoc multi-seed/multi-checkpoint harness) to
- * counter two runaway trends the untuned model fell into: a "shrink to
- * nothing" spiral (SIZE has real upkeep/growth costs but, before tuning, no
- * offsetting benefit, so populations converged on minimum viable size within
- * a few hundred ticks) and non-viable carnivory (hunting's energy payoff
- * didn't cover the risk/cost of a multi-tick chase-and-kill cycle, so
- * carnivorous lineages went extinct within ~30 ticks). SIZE_META_SCALE and
- * SIZE's own metabolic weight were lowered, HP_PER_MASS/GROWTH_ENERGY were
- * adjusted so bigger bodies are survivable, and MEAT_ENERGY/DMG_K were raised
- * so a successful hunt pays for itself. Note this only slows the underlying
- * dynamic — the environment has a single undifferentiated food resource
- * (foliage), so competitive exclusion still drives most single-run
- * populations toward one dominant herbivore lineage over long timescales;
- * durable multi-niche coexistence likely needs actual niche differentiation
- * (multiple food types, spatial biomes) rather than more constant-tuning.
+ * counter runaway trends the untuned model fell into: a "shrink to nothing"
+ * spiral (SIZE had real upkeep/growth costs but no offsetting benefit, so
+ * populations converged on minimum viable size within a few hundred ticks)
+ * and non-viable carnivory (hunting's energy payoff didn't cover the
+ * risk/cost of a multi-tick chase-and-kill cycle, so carnivorous lineages
+ * went extinct within ~30 ticks). Countermeasures: foliage intake and whole-
+ * body metabolism both now scale with an animal's actual current mass
+ * (see {@link Animal#grazeCapacity()}, {@link Animal#metabolism()}) rather
+ * than a flat per-tick rate, so a bigger mouth/gut and Kleiber's-law
+ * metabolic efficiency give SIZE genuine upside; HP_PER_MASS/GROWTH_ENERGY
+ * were tuned so bigger bodies are survivable and reachable; MEAT_ENERGY/DMG_K
+ * were raised so a successful hunt pays for itself, and prey preference
+ * (PREY_DISTANCE_WEIGHT) makes big bodies a partial predation refuge without
+ * a hard cutoff. Note this only slows the underlying dynamic — the
+ * environment has a single undifferentiated food resource (foliage), so
+ * competitive exclusion still drives most single-run populations toward one
+ * dominant herbivore lineage over long timescales; durable multi-niche
+ * coexistence likely needs actual niche differentiation (multiple food
+ * types, spatial biomes) rather than more constant-tuning.
  *
  * Lives in {@code model} (rather than {@code engine}) because both the model
  * layer (derived attributes on {@link Animal}, speciation in
@@ -30,8 +35,17 @@ public final class Balance {
   private Balance() {}
 
   // --- Energy & metabolism ---
-  public static double BASE_META = 0.05;          // baseline upkeep per tick
-  public static double SIZE_META_SCALE = 0.22;    // how much size amplifies upkeep
+  public static double BASE_META = 0.05;          // baseline upkeep per tick (flat, all sizes)
+  // Economy of scale, in the spirit of Kleiber's law: active-trait upkeep
+  // (strength, speed, awareness, etc.) costs proportionally less at max SIZE
+  // than at min SIZE. Bounded and linear in normalized SIZE (like the old
+  // SIZE_META_SCALE it replaces) rather than a raw mass exponent — an
+  // exponent applied to the *whole* budget created a cost cliff just above
+  // minimum size and destabilized the population; this stays gentle. Energy
+  // reserves (below) still scale linearly with mass, so a large animal's
+  // reserve-to-upkeep ratio grows with size: it can coast through longer
+  // stretches without food than a small animal can.
+  public static double SIZE_METABOLIC_DISCOUNT = 0.35;
   public static double MOVE_K = 0.02;             // energy per tile stepped, per unit mass
   public static double RESERVE_PER_MASS = 10.0;   // max energy reserves per unit mass
 
@@ -43,9 +57,12 @@ public final class Balance {
   public static double GROWTH_MARGIN = 1.5;       // only grow when energy > metabolism*this
 
   // --- Feeding ---
-  public static double APPETITE = 0.35;           // max foliage grazed per tick
+  public static double APPETITE = 0.35;           // base foliage grazed per tick
+  public static double APPETITE_MASS_SCALE = 0.25; // extra graze capacity per unit body mass
   public static double PLANT_ENERGY = 3.0;        // energy per unit foliage (× herbivory)
-  public static double MEAT_ENERGY = 5.0;         // energy per unit prey mass (× carnivory)
+  public static double MEAT_ENERGY = 7.0;         // energy per unit prey mass (× carnivory)
+  public static double PREY_DISTANCE_WEIGHT = 0.15; // how much distance offsets mass-ratio in prey preference
+  public static double MAX_PREY_MASS_RATIO = 3.0; // prey this much bigger than the predator isn't worth attempting
 
   // --- Combat ---
   public static double BASE_HP = 5.0;

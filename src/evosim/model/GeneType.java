@@ -14,7 +14,7 @@ import java.util.Random;
  */
 public enum GeneType {
   //          min,  max,  variation, metabolicWeight
-  SIZE       ( 1.0, 10.0, 0.8, 0.12),
+  SIZE       ( 1.0, 10.0, 0.8, 0.00), // cost comes from Kleiber-law mass scaling, not a flat weight
   LAND_SPEED ( 0.0,  1.0, 0.1, 0.15),
   DIET       ( 0.0,  1.0, 0.1, 0.00), // 0 = pure herbivore, 1 = pure carnivore
   TOLERANCE  ( 0.0,  1.0, 0.1, 0.00), // how carnivorous another must be to read as a threat

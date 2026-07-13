@@ -1,5 +1,7 @@
 package evosim.engine;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 
@@ -25,8 +27,10 @@ final class Behavior {
 
     Animal threat = null, prey = null;
     int threatDist = Integer.MAX_VALUE, preyDist = Integer.MAX_VALUE;
+    double bestPreyScore = Double.MAX_VALUE;
     Genome ag = a.getGenome();
     double kinRange = a.n(GeneType.INCLUSIVITY) * Balance.MAX_KIN_DIST;
+    boolean canHunt = a.n(GeneType.DIET) > 0.3;
 
     for (Animal b : seen) {
       boolean kin = ag.distance(b.getGenome()) < kinRange;
@@ -37,10 +41,20 @@ final class Behavior {
         threat = b;
         threatDist = d;
       }
-      // Prey: this animal is carnivorous, and b is a plausible catch.
-      if (a.n(GeneType.DIET) > 0.3 && b.getMass() < a.getMass() * 1.5 && d < preyDist) {
-        prey = b;
-        preyDist = d;
+      // Prey: a preference, not a hard cutoff — predators favor prey well
+      // under their own mass (easy, safe kills) but will still go after
+      // something bigger, and riskier, if nothing smaller is around. Still
+      // capped at MAX_PREY_MASS_RATIO: beyond that the attack formula does
+      // essentially no damage, so it's not a "risky fallback", it's a
+      // guaranteed waste of every tick spent hunting instead of grazing.
+      if (canHunt && b.getMass() < a.getMass() * Balance.MAX_PREY_MASS_RATIO) {
+        double massRatio = b.getMass() / a.getMass();
+        double score = massRatio + Balance.PREY_DISTANCE_WEIGHT * d;
+        if (score < bestPreyScore) {
+          bestPreyScore = score;
+          prey = b;
+          preyDist = d;
+        }
       }
     }
 
@@ -93,7 +107,7 @@ final class Behavior {
   // --- Actions ---
 
   private boolean graze(World w, Animal a) {
-    double got = w.tileAt(a.getX(), a.getY()).graze(Balance.APPETITE);
+    double got = w.tileAt(a.getX(), a.getY()).graze(a.grazeCapacity());
     if (got <= 0) {
       // Nothing here — step toward the richest adjacent tile.
       int[] best = richestAdjacent(w, a);
@@ -182,15 +196,25 @@ final class Behavior {
     return true;
   }
 
-  private int[] freeAdjacent(World w, Animal a) {
+  /** The 8 neighbor offsets in a random order, so tie-breaks aren't always northwest. */
+  private static List<int[]> shuffledNeighbors(World w) {
+    List<int[]> offsets = new ArrayList<>(8);
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
         if (dx == 0 && dy == 0) continue;
-        int nx = a.getX() + dx;
-        int ny = a.getY() + dy;
-        if (w.inBounds(nx, ny) && w.residentAt(nx, ny) == null) {
-          return new int[] { nx, ny };
-        }
+        offsets.add(new int[] { dx, dy });
+      }
+    }
+    Collections.shuffle(offsets, w.rng().get());
+    return offsets;
+  }
+
+  private int[] freeAdjacent(World w, Animal a) {
+    for (int[] off : shuffledNeighbors(w)) {
+      int nx = a.getX() + off[0];
+      int ny = a.getY() + off[1];
+      if (w.inBounds(nx, ny) && w.residentAt(nx, ny) == null) {
+        return new int[] { nx, ny };
       }
     }
     return null;
@@ -199,17 +223,14 @@ final class Behavior {
   private int[] richestAdjacent(World w, Animal a) {
     int[] best = null;
     double bestFoliage = 0.05;
-    for (int dy = -1; dy <= 1; dy++) {
-      for (int dx = -1; dx <= 1; dx++) {
-        if (dx == 0 && dy == 0) continue;
-        int nx = a.getX() + dx;
-        int ny = a.getY() + dy;
-        if (w.inBounds(nx, ny) && w.residentAt(nx, ny) == null) {
-          double f = w.tileAt(nx, ny).getFoliage();
-          if (f > bestFoliage) {
-            bestFoliage = f;
-            best = new int[] { nx, ny };
-          }
+    for (int[] off : shuffledNeighbors(w)) {
+      int nx = a.getX() + off[0];
+      int ny = a.getY() + off[1];
+      if (w.inBounds(nx, ny) && w.residentAt(nx, ny) == null) {
+        double f = w.tileAt(nx, ny).getFoliage();
+        if (f > bestFoliage) {
+          bestFoliage = f;
+          best = new int[] { nx, ny };
         }
       }
     }
