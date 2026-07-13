@@ -46,11 +46,22 @@ public final class Species {
     this.parentSpeciesId = parentSpeciesId;
   }
 
-  /** Fold a newly classified genome into the running-mean centroid and counts. */
+  /**
+   * Fold a newly classified genome into the centroid and counts. The centroid
+   * is a moving average bounded by {@link Balance#CENTROID_HORIZON}: early on
+   * it behaves like a true running mean (converging quickly to represent the
+   * founding members), but once a species has absorbed more than the horizon,
+   * older members are progressively forgotten so the centroid keeps tracking
+   * where the *current* population actually sits. Without this bound, a
+   * long-lived species' centroid would harden into a lifetime average and
+   * stop moving at all, making later drift undetectable no matter how far the
+   * population had actually shifted.
+   */
   void absorb(double[] norm) {
     memberSamples++;
+    double alpha = 1.0 / Math.min(memberSamples, Balance.CENTROID_HORIZON);
     for (int i = 0; i < centroid.length; i++) {
-      centroid[i] += (norm[i] - centroid[i]) / memberSamples;
+      centroid[i] += alpha * (norm[i] - centroid[i]);
     }
     members++;
     totalBirths++;

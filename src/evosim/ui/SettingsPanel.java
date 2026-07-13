@@ -85,16 +85,18 @@ public final class SettingsPanel extends JPanel {
       @Override public boolean isCellEditable(int row, int col) { return col > 0; }
       @Override public Class<?> getColumnClass(int col) { return col == 0 ? String.class : Double.class; }
     };
+    SimSettings defaults = new SimSettings();
     for (GeneType t : GeneType.ALL) {
-      model.addRow(new Object[] { t.name(), t.min(), t.max() });
+      model.addRow(new Object[] { t.name(), defaults.startMin[t.ordinal()], defaults.startMax[t.ordinal()] });
     }
     return model;
   }
 
   private void resetGeneRanges() {
+    SimSettings defaults = new SimSettings();
     for (GeneType t : GeneType.ALL) {
-      geneModel.setValueAt(t.min(), t.ordinal(), 1);
-      geneModel.setValueAt(t.max(), t.ordinal(), 2);
+      geneModel.setValueAt(defaults.startMin[t.ordinal()], t.ordinal(), 1);
+      geneModel.setValueAt(defaults.startMax[t.ordinal()], t.ordinal(), 2);
     }
   }
 

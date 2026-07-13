@@ -47,10 +47,14 @@ public final class World {
     }
   }
 
-  /** Build a world and seed it with {@code population} randomly placed random-genome animals. */
+  /**
+   * Build a world and seed it with {@code population} randomly placed animals
+   * drawn from the default founding band (see {@link evosim.config.SimSettings}).
+   */
   public static World create(int width, int height, int population, long seed, double baseFertility) {
     World w = new World(width, height, seed, baseFertility);
-    w.seedPopulation(population, null, null);
+    evosim.config.SimSettings defaults = new evosim.config.SimSettings();
+    w.seedPopulation(population, defaults.startMin, defaults.startMax);
     w.stats.sample(w);
     return w;
   }
@@ -73,9 +77,7 @@ public final class World {
       int x = r.nextInt(width);
       int y = r.nextInt(height);
       if (tiles[y][x].getResident() != null) continue;
-      Genome genome = (startMin == null)
-          ? Genome.random(r)
-          : Genome.random(r, startMin, startMax);
+      Genome genome = Genome.random(r, startMin, startMax);
       Animal a = new Animal(genome, nextId++);
       a.setPosition(x, y);
       a.setSpeciesId(species.classify(a.getGenome(), 0, evosim.model.SpeciesRegistry.NO_PARENT));

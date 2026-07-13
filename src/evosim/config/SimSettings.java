@@ -1,5 +1,6 @@
 package evosim.config;
 
+import evosim.model.Balance;
 import evosim.model.GeneType;
 
 /**
@@ -25,11 +26,18 @@ public final class SimSettings {
     resetGeneRangesToDefault();
   }
 
-  /** Reset every gene's start range to its full allowed range. */
+  /**
+   * Reset every gene's start range to the default founding band: a narrow
+   * range centered on the gene's midpoint (see {@link Balance#FOUNDER_GENE_BAND})
+   * rather than its full allowed range, so the starting population begins as
+   * a handful of related founders and speciates from there over the run.
+   */
   public void resetGeneRangesToDefault() {
     for (GeneType t : GeneType.ALL) {
-      startMin[t.ordinal()] = t.min();
-      startMax[t.ordinal()] = t.max();
+      double mid = (t.min() + t.max()) / 2.0;
+      double half = Balance.FOUNDER_GENE_BAND * (t.max() - t.min()) / 2.0;
+      startMin[t.ordinal()] = mid - half;
+      startMax[t.ordinal()] = mid + half;
     }
   }
 

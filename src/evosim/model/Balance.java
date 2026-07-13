@@ -79,8 +79,40 @@ public final class Balance {
   public static double PERCEPTION_NOISE = 0.15;   // random slop added to detection contests
 
   // --- Speciation ---
-  public static double SPECIATION_THRESHOLD = 0.18; // genetic distance to found a new species
+  // Empirically calibrated (see below) so that, once the founder-diversity and
+  // centroid-staleness bugs described in FOUNDER_GENE_BAND/CENTROID_HORIZON
+  // were fixed, genuine drift-based speciation reliably occurs within a
+  // multi-thousand-tick run without fragmenting into noisy, ephemeral
+  // one-generation species. Swept 0.09-0.18 across 8 seeds at 3000-8000
+  // ticks: 0.18 never split in 8000 ticks (steady-state drift plateaus around
+  // 0.17 under stabilizing selection to a single dominant strategy — see the
+  // class doc); 0.10 and below started producing species that never exceeded
+  // a population of 1 (mutation noise, not real divergence); 0.11 was the
+  // sweet spot — every seed speciated by tick 4000-8000, and 20+ of 24 new
+  // species across the sweep reached a real, sustained population.
+  public static double SPECIATION_THRESHOLD = 0.11; // genetic distance to found a new species
   public static double MAX_KIN_DIST = 0.4;          // Inclusivity=1 treats everything within this as kin
+  // Bounds how many absorbed members a species' centroid "remembers" (see
+  // Species#absorb). Below this many total members it behaves as a true
+  // running mean; beyond it, older members are progressively discounted so
+  // the centroid keeps tracking the current population instead of hardening
+  // into an immovable lifetime average — without this, no species could ever
+  // speciate again once it had accumulated more than a few hundred births,
+  // no matter how far the population had actually drifted.
+  public static int CENTROID_HORIZON = 300;
+
+  // --- Founding population ---
+  // Default width (as a fraction of each gene's full range, centered on the
+  // midpoint) that the starting population is drawn from when the user hasn't
+  // narrowed a gene's range in Settings. Two independently-random founders
+  // drawn from the *full* range sit ~0.41 apart on average — more than twice
+  // SPECIATION_THRESHOLD — so a fully-random founding population instantly
+  // fragments into one species per animal before any real drift happens. A
+  // narrow shared band starts the population as a small handful of species
+  // (or one) and lets speciation genuinely emerge from mutation over the run,
+  // which is both more realistic and what the per-gene range sliders in
+  // Settings were already documented to do.
+  public static double FOUNDER_GENE_BAND = 0.15;
 
   // --- Sampling / reporting ---
   public static int SAMPLE_INTERVAL = 5;          // ticks between population samples
