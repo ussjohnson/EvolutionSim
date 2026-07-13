@@ -1,5 +1,6 @@
 package evosim.ui;
 
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
@@ -8,6 +9,7 @@ import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.function.BiConsumer;
+import java.util.function.DoubleConsumer;
 
 import javax.swing.JComponent;
 
@@ -17,28 +19,48 @@ import evosim.engine.Snapshot;
  * Paints the terrarium: each tile as a green cell whose brightness tracks its
  * foliage, and each animal as a filled circle in its species colour, sized by
  * the animal's current mass. Reads only the latest immutable {@link Snapshot},
- * never the live model. Clicking a tile reports its coordinates via the
- * listener registered with {@link #onTileClick}; the currently selected tile
- * (set with {@link #setSelectedTile}) is drawn with a highlight outline.
+ * never the live model.
+ *
+ * Tile size is a fixed {@link #BASE_CELL} pixels scaled by {@link #getZoom},
+ * not "fit to container" — so the panel's preferred size grows with zoom and
+ * a surrounding {@link javax.swing.JScrollPane} handles panning once the
+ * rendered map exceeds the viewport. Clicking a tile reports its coordinates
+ * via the listener registered with {@link #onTileClick}; the currently
+ * selected tile (set with {@link #setSelectedTile}) is drawn with a
+ * highlight outline. The mouse wheel zooms in/out (see {@link #onZoomChanged}
+ * for keeping an external zoom control in sync).
  */
 public final class MapPanel extends JComponent {
+  private static final double BASE_CELL = 20.0; // pixels per tile at zoom = 1.0
+  private static final double MIN_ZOOM = 0.25;
+  private static final double MAX_ZOOM = 4.0;
+
   private volatile Snapshot snap;
   private BiConsumer<Integer, Integer> tileClickListener;
+  private DoubleConsumer zoomListener;
+  private double zoom = 1.0;
   private int selectedX = -1;
   private int selectedY = -1;
 
   public MapPanel() {
-    setPreferredSize(new Dimension(800, 600));
     setBackground(Color.BLACK);
     addMouseListener(new MouseAdapter() {
       @Override public void mouseClicked(MouseEvent e) {
         handleClick(e.getX(), e.getY());
       }
     });
+    addMouseWheelListener(e -> {
+      double factor = Math.pow(1.1, -e.getWheelRotation());
+      setZoom(zoom * factor);
+    });
   }
 
   public void setSnapshot(Snapshot s) {
+    boolean sizeChanged = (snap == null) || (s != null && (s.width != snap.width || s.height != snap.height));
     this.snap = s;
+    if (sizeChanged) {
+      revalidate();
+    }
   }
 
   /** Registers a listener invoked with (tileX, tileY) when the user clicks a tile. */
@@ -46,16 +68,42 @@ public final class MapPanel extends JComponent {
     this.tileClickListener = listener;
   }
 
+  /** Registers a listener invoked whenever the zoom level changes, e.g. via the mouse wheel. */
+  public void onZoomChanged(DoubleConsumer listener) {
+    this.zoomListener = listener;
+  }
+
+  public double getZoom() {
+    return zoom;
+  }
+
+  public void setZoom(double z) {
+    double clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
+    if (clamped == zoom) return;
+    zoom = clamped;
+    revalidate();
+    repaint();
+    if (zoomListener != null) zoomListener.accept(zoom);
+  }
+
   public void setSelectedTile(int x, int y) {
     this.selectedX = x;
     this.selectedY = y;
   }
 
+  @Override
+  public Dimension getPreferredSize() {
+    Snapshot s = snap;
+    double cell = BASE_CELL * zoom;
+    if (s == null) return new Dimension((int) (40 * cell), (int) (30 * cell));
+    return new Dimension(Math.max(1, (int) Math.round(s.width * cell)),
+        Math.max(1, (int) Math.round(s.height * cell)));
+  }
+
   private void handleClick(int px, int py) {
     Snapshot s = snap;
     if (s == null || tileClickListener == null) return;
-    double cell = Math.min((double) getWidth() / s.width, (double) getHeight() / s.height);
-    if (cell <= 0) return;
+    double cell = BASE_CELL * zoom;
     int tx = (int) (px / cell);
     int ty = (int) (py / cell);
     if (tx < 0 || tx >= s.width || ty < 0 || ty >= s.height) return;
@@ -74,11 +122,7 @@ public final class MapPanel extends JComponent {
       return;
     }
 
-    double cell = Math.min((double) getWidth() / s.width, (double) getHeight() / s.height);
-    if (cell <= 0) {
-      g.dispose();
-      return;
-    }
+    double cell = BASE_CELL * zoom;
 
     // Tiles.
     for (int y = 0; y < s.height; y++) {
@@ -114,7 +158,7 @@ public final class MapPanel extends JComponent {
       int w = (int) ((selectedX + 1) * cell) - px;
       int h = (int) ((selectedY + 1) * cell) - py;
       g.setColor(Color.WHITE);
-      g.setStroke(new java.awt.BasicStroke(2f));
+      g.setStroke(new BasicStroke(2f));
       g.drawRect(px, py, Math.max(1, w - 1), Math.max(1, h - 1));
     }
 

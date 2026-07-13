@@ -9,6 +9,7 @@ import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JSlider;
 import javax.swing.JSplitPane;
 import javax.swing.Timer;
@@ -31,13 +32,18 @@ public final class SimView extends JPanel {
   private final InspectorPanel inspector = new InspectorPanel();
   private final JButton playPause = new JButton("Play");
   private final JLabel status = new JLabel("tick 0   pop 0");
+  private final JSlider zoomSlider = new JSlider(25, 400, 100);
   private final Timer repaintTimer;
 
   public SimView(SimulationEngine engine) {
     super(new BorderLayout());
     this.engine = engine;
 
-    add(map, BorderLayout.CENTER);
+    JScrollPane mapScroll = new JScrollPane(map);
+    mapScroll.getVerticalScrollBar().setUnitIncrement(20);
+    mapScroll.getHorizontalScrollBar().setUnitIncrement(20);
+    add(mapScroll, BorderLayout.CENTER);
+
     JSplitPane east = new JSplitPane(JSplitPane.VERTICAL_SPLIT, sidebar, inspector);
     east.setResizeWeight(0.55);
     east.setDividerLocation(320);
@@ -50,6 +56,7 @@ public final class SimView extends JPanel {
       inspector.setSelectedTile(x, y);
       inspector.refresh();
     });
+    map.onZoomChanged(z -> zoomSlider.setValue((int) Math.round(z * 100)));
 
     repaintTimer = new Timer(33, e -> refresh());
   }
@@ -68,10 +75,16 @@ public final class SimView extends JPanel {
     speed.setPreferredSize(new Dimension(180, speed.getPreferredSize().height));
     speed.addChangeListener(e -> engine.setTicksPerSecond(speed.getValue()));
 
+    JLabel zoomLabel = new JLabel("Zoom");
+    zoomSlider.setPreferredSize(new Dimension(140, zoomSlider.getPreferredSize().height));
+    zoomSlider.addChangeListener(e -> map.setZoom(zoomSlider.getValue() / 100.0));
+
     bar.add(playPause);
     bar.add(stop);
     bar.add(speedLabel);
     bar.add(speed);
+    bar.add(zoomLabel);
+    bar.add(zoomSlider);
     bar.add(status);
     return bar;
   }
