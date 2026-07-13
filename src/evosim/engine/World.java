@@ -24,6 +24,7 @@ import evosim.model.Tile;
 public final class World {
   private final int width;
   private final int height;
+  private final boolean wraparound;
   private final Tile[][] tiles; // [y][x]
   private final List<Animal> animals = new ArrayList<>();
   private final RandomSource rng;
@@ -34,9 +35,10 @@ public final class World {
   private int tick = 0;
   private int nextId = 0;
 
-  public World(int width, int height, long seed, double baseFertility) {
+  public World(int width, int height, long seed, double baseFertility, boolean wraparound) {
     this.width = width;
     this.height = height;
+    this.wraparound = wraparound;
     this.rng = new RandomSource(seed);
     this.tiles = new Tile[height][width];
     for (int y = 0; y < height; y++) {
@@ -50,19 +52,21 @@ public final class World {
   /**
    * Build a world and seed it with {@code population} randomly placed animals
    * drawn from the default founding band (see {@link evosim.config.SimSettings}).
+   * Bounded edges (no wraparound) — used by the headless/dev entry points
+   * where a settings-driven {@link #fromSettings} isn't in play.
    */
   public static World create(int width, int height, int population, long seed, double baseFertility) {
-    World w = new World(width, height, seed, baseFertility);
+    World w = new World(width, height, seed, baseFertility, false);
     evosim.config.SimSettings defaults = new evosim.config.SimSettings();
     w.seedPopulation(population, defaults.startMin, defaults.startMax);
     w.stats.sample(w);
     return w;
   }
 
-  /** Build a world from user-configured settings, honouring per-gene start ranges. */
+  /** Build a world from user-configured settings, honouring per-gene start ranges and wraparound. */
   public static World fromSettings(evosim.config.SimSettings s) {
     s.sanitize();
-    World w = new World(s.width, s.height, s.seed, s.baseFertility);
+    World w = new World(s.width, s.height, s.seed, s.baseFertility, s.wraparound);
     w.seedPopulation(s.population, s.startMin, s.startMax);
     w.stats.sample(w);
     return w;
@@ -116,8 +120,49 @@ public final class World {
 
   // --- Grid helpers ---
 
+  public boolean wraparound() {
+    return wraparound;
+  }
+
   public boolean inBounds(int x, int y) {
     return x >= 0 && x < width && y >= 0 && y < height;
+  }
+
+  /** Like {@link #inBounds}, but always true under wraparound (any coordinate resolves to a tile). */
+  public boolean canReach(int x, int y) {
+    return wraparound || inBounds(x, y);
+  }
+
+  /** Normalizes x into [0, width) when wraparound is on; a no-op otherwise (caller must bounds-check separately). */
+  public int wrapX(int x) {
+    return wraparound ? Math.floorMod(x, width) : x;
+  }
+
+  /** Normalizes y into [0, height) when wraparound is on; a no-op otherwise. */
+  public int wrapY(int y) {
+    return wraparound ? Math.floorMod(y, height) : y;
+  }
+
+  /**
+   * Signed x-distance from {@code from} to {@code to}, taking the shorter way
+   * around the edge when wraparound is on. {@code Integer.signum(...)} of the
+   * result gives the correct step direction either way.
+   */
+  public int wrappedDeltaX(int from, int to) {
+    int d = to - from;
+    if (!wraparound) return d;
+    if (d > width / 2) d -= width;
+    else if (d < -width / 2) d += width;
+    return d;
+  }
+
+  /** Signed y-distance from {@code from} to {@code to}; see {@link #wrappedDeltaX}. */
+  public int wrappedDeltaY(int from, int to) {
+    int d = to - from;
+    if (!wraparound) return d;
+    if (d > height / 2) d -= height;
+    else if (d < -height / 2) d += height;
+    return d;
   }
 
   public Tile tileAt(int x, int y) {

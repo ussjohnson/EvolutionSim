@@ -31,7 +31,9 @@ final class Perception {
         if (dx == 0 && dy == 0) continue;
         int nx = ax + dx;
         int ny = ay + dy;
-        if (!w.inBounds(nx, ny)) continue;
+        if (!w.canReach(nx, ny)) continue;
+        nx = w.wrapX(nx);
+        ny = w.wrapY(ny);
         Animal b = w.residentAt(nx, ny);
         if (b == null || !b.isAlive()) continue;
 

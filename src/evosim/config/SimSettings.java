@@ -17,6 +17,7 @@ public final class SimSettings {
   public double baseFertility = 0.2;
   public int durationTicks = 0; // 0 = run until the user stops it
   public long seed = 42;
+  public boolean wraparound = false; // off = bounded edges (today's default behavior)
 
   // Per-gene initial value range, indexed by GeneType.ordinal().
   public final double[] startMin = new double[GeneType.COUNT];

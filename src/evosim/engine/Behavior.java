@@ -36,7 +36,7 @@ final class Behavior {
     for (Animal b : seen) {
       boolean kin = ag.distance(b.getGenome()) < kinRange;
       if (kin) continue;
-      int d = cheb(a, b);
+      int d = cheb(w, a, b);
       // Threat: b is carnivorous enough to worry this animal.
       if (b.n(GeneType.DIET) >= a.n(GeneType.TOLERANCE) && d < threatDist) {
         threat = b;
@@ -173,8 +173,10 @@ final class Behavior {
   private void moveToward(World w, Animal a, int tx, int ty) {
     int steps = 1 + (int) Math.round(a.n(GeneType.LAND_SPEED) * 2);
     for (int i = 0; i < steps; i++) {
-      int nx = a.getX() + Integer.signum(tx - a.getX());
-      int ny = a.getY() + Integer.signum(ty - a.getY());
+      int dx = w.wrappedDeltaX(a.getX(), tx);
+      int dy = w.wrappedDeltaY(a.getY(), ty);
+      int nx = a.getX() + Integer.signum(dx);
+      int ny = a.getY() + Integer.signum(dy);
       if (!tryStep(w, a, nx, ny)) break;
       if (a.getX() == tx && a.getY() == ty) break;
     }
@@ -183,15 +185,20 @@ final class Behavior {
   private void moveAway(World w, Animal a, int tx, int ty) {
     int steps = 1 + (int) Math.round(a.n(GeneType.LAND_SPEED) * 2);
     for (int i = 0; i < steps; i++) {
-      int nx = a.getX() - Integer.signum(tx - a.getX());
-      int ny = a.getY() - Integer.signum(ty - a.getY());
+      int dx = w.wrappedDeltaX(a.getX(), tx);
+      int dy = w.wrappedDeltaY(a.getY(), ty);
+      int nx = a.getX() - Integer.signum(dx);
+      int ny = a.getY() - Integer.signum(dy);
       if (!tryStep(w, a, nx, ny)) break;
     }
   }
 
+  /** Attempts one step to (nx, ny), wrapping around the edge first if wraparound is on. */
   private boolean tryStep(World w, Animal a, int nx, int ny) {
+    if (!w.canReach(nx, ny)) return false;
+    nx = w.wrapX(nx);
+    ny = w.wrapY(ny);
     if (nx == a.getX() && ny == a.getY()) return false;
-    if (!w.inBounds(nx, ny)) return false;
     if (w.residentAt(nx, ny) != null) return false;
     w.moveAnimal(a, nx, ny);
     a.addEnergy(-a.moveCost());
@@ -215,7 +222,10 @@ final class Behavior {
     for (int[] off : shuffledNeighbors(w)) {
       int nx = a.getX() + off[0];
       int ny = a.getY() + off[1];
-      if (w.inBounds(nx, ny) && w.residentAt(nx, ny) == null) {
+      if (!w.canReach(nx, ny)) continue;
+      nx = w.wrapX(nx);
+      ny = w.wrapY(ny);
+      if (w.residentAt(nx, ny) == null) {
         return new int[] { nx, ny };
       }
     }
@@ -228,7 +238,10 @@ final class Behavior {
     for (int[] off : shuffledNeighbors(w)) {
       int nx = a.getX() + off[0];
       int ny = a.getY() + off[1];
-      if (w.inBounds(nx, ny) && w.residentAt(nx, ny) == null) {
+      if (!w.canReach(nx, ny)) continue;
+      nx = w.wrapX(nx);
+      ny = w.wrapY(ny);
+      if (w.residentAt(nx, ny) == null) {
         double f = w.tileAt(nx, ny).getFoliage();
         if (f > bestFoliage) {
           bestFoliage = f;
@@ -239,7 +252,9 @@ final class Behavior {
     return best;
   }
 
-  private static int cheb(Animal a, Animal b) {
-    return Math.max(Math.abs(a.getX() - b.getX()), Math.abs(a.getY() - b.getY()));
+  private static int cheb(World w, Animal a, Animal b) {
+    int dx = Math.abs(w.wrappedDeltaX(a.getX(), b.getX()));
+    int dy = Math.abs(w.wrappedDeltaY(a.getY(), b.getY()));
+    return Math.max(dx, dy);
   }
 }

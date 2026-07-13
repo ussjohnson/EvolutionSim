@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -31,6 +32,7 @@ public final class SettingsPanel extends JPanel {
   private final JSpinner fertility = doubleSpinner(0.2, 0.0, 1.0, 0.05);
   private final JSpinner duration = intSpinner(0, 0, 1000000);
   private final JSpinner seed = intSpinner(42, 0, Integer.MAX_VALUE);
+  private final JCheckBox wraparound = new JCheckBox("Wraparound map (edges connect)");
   private final DefaultTableModel geneModel;
 
   public SettingsPanel(Consumer<SimSettings> onStart) {
@@ -73,6 +75,7 @@ public final class SettingsPanel extends JPanel {
     form.add(new JLabel("Plant fertility (0-1)")); form.add(fertility);
     form.add(new JLabel("Duration (ticks, 0 = until Stop)")); form.add(duration);
     form.add(new JLabel("Random seed"));         form.add(seed);
+    form.add(new JLabel());                      form.add(wraparound);
     JPanel wrap = new JPanel(new BorderLayout());
     wrap.add(form, BorderLayout.NORTH);
     wrap.setPreferredSize(new Dimension(300, 400));
@@ -108,6 +111,7 @@ public final class SettingsPanel extends JPanel {
     s.baseFertility = ((Number) fertility.getValue()).doubleValue();
     s.durationTicks = (Integer) duration.getValue();
     s.seed = ((Number) seed.getValue()).longValue();
+    s.wraparound = wraparound.isSelected();
     for (GeneType t : GeneType.ALL) {
       int i = t.ordinal();
       s.startMin[i] = ((Number) geneModel.getValueAt(i, 1)).doubleValue();
