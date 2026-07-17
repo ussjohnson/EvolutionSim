@@ -28,7 +28,12 @@ public enum GeneType {
   AWARENESS  ( 1.0,  6.0, 0.5, 0.05), // detection radius in tiles
   DEFENSIVE  ( 0.0,  1.0, 0.1, 0.00), // fight (1) vs flight (0) disposition
   BRAVERY    ( 0.0,  1.0, 0.1, 0.00), // how much the mass ratio sways a fight/flee choice
-  FECUNDITY  ( 0.0,  1.0, 0.1, 0.00); // higher = reproduces at a lower energy reserve
+  FECUNDITY  ( 0.0,  1.0, 0.1, 0.00), // higher = reproduces at a lower energy reserve
+  // Adapted climate: an animal's effective stealth (Animal#effectiveStealth)
+  // peaks when a tile's actual temperature/moisture matches these, and
+  // fades with mismatch — camouflage is biome-specific, not universal.
+  CAMO_TEMP    ( 0.0,  1.0, 0.1, 0.00),
+  CAMO_MOISTURE( 0.0,  1.0, 0.1, 0.00);
 
   public static final GeneType[] ALL = values();
   public static final int COUNT = ALL.length;

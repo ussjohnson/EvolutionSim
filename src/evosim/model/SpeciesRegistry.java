@@ -2,6 +2,7 @@ package evosim.model;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 /**
  * Assigns and tracks taxonomic species using online "leader" clustering.
@@ -16,21 +17,33 @@ import java.util.List;
  * Comparing against a running-mean centroid (rather than the fixed founder)
  * keeps a slowly drifting lineage as one species instead of spawning a new one
  * every few generations.
+ *
+ * A founded species' colour follows the same lineage: a child inherits its
+ * parent's hue plus a small random nudge (see {@link Balance#SPECIES_HUE_JITTER}),
+ * so related species look like variations on a theme when viewed on the map or
+ * in the taxonomy tree; a root species (no in-sim ancestor) instead gets a hue
+ * spread via the golden angle from every other root, for maximal separation
+ * between unrelated lineages.
  */
 public final class SpeciesRegistry {
   /** No ancestor: used when founding species from the initial random population. */
   public static final int NO_PARENT = -1;
 
+  /** Irrational angle (degrees) that spreads successive hues around the wheel with minimal repeats. */
+  private static final double GOLDEN_ANGLE = 137.50776;
+
   private final List<Species> all = new ArrayList<>();
   private int nextId = 0;
+  private int rootHueIndex = 0;
 
   /**
    * Classify a genome, joining or founding a species, and return its id.
    * @param parentSpeciesId the species of the animal that produced this genome
    *        (its parent, for a birth), or {@link #NO_PARENT} for the initial
    *        random population, which has no in-sim ancestor.
+   * @param rng the world's seeded RNG, used only for a founded species' colour jitter.
    */
-  public int classify(Genome genome, int tick, int parentSpeciesId) {
+  public int classify(Genome genome, int tick, int parentSpeciesId, Random rng) {
     double[] norm = genome.normVector();
     Species best = null;
     double bestDist = Double.MAX_VALUE;
@@ -46,11 +59,24 @@ public final class SpeciesRegistry {
       best.absorb(norm);
       return best.id();
     }
+    int color = colorFor(parentSpeciesId, rng);
     Species founded = new Species(nextId++, NameGenerator.nameFor(norm),
-        Coloring.fromNorm(norm), norm, tick, parentSpeciesId);
+        color, norm, tick, parentSpeciesId);
     founded.absorb(norm);
     all.add(founded);
     return founded.id();
+  }
+
+  /** A new root hue (golden-angle spread) or a jittered nudge from the parent's hue. */
+  private int colorFor(int parentSpeciesId, Random rng) {
+    Species parent = (parentSpeciesId == NO_PARENT) ? null : byId(parentSpeciesId);
+    if (parent == null) {
+      double hue = (rootHueIndex++ * GOLDEN_ANGLE) % 360.0;
+      return Coloring.fromHue(hue);
+    }
+    double parentHue = Coloring.hueOf(parent.color());
+    double jitter = (rng.nextDouble() - 0.5) * 2.0 * Balance.SPECIES_HUE_JITTER;
+    return Coloring.fromHue(parentHue + jitter);
   }
 
   public void recordDeath(int speciesId, int tick, Species.DeathCause cause, int bornAtTick) {

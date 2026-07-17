@@ -6,6 +6,7 @@ import java.util.List;
 import evosim.model.Animal;
 import evosim.model.Balance;
 import evosim.model.GeneType;
+import evosim.model.Tile;
 
 /**
  * Sensing: which other animals a given animal can currently detect. Only the
@@ -34,13 +35,15 @@ final class Perception {
         if (!w.canReach(nx, ny)) continue;
         nx = w.wrapX(nx);
         ny = w.wrapY(ny);
-        Animal b = w.residentAt(nx, ny);
+        Tile tile = w.tileAt(nx, ny);
+        Animal b = tile.getResident();
         if (b == null || !b.isAlive()) continue;
 
         int cheb = Math.max(Math.abs(dx), Math.abs(dy));
         double falloff = 1.0 + (double) cheb / (r + 1); // farther = harder to see
         double noise = (w.rng().nextDouble() - 0.5) * Balance.PERCEPTION_NOISE;
-        double detectScore = sensitivity + noise - b.effectiveStealth() * falloff;
+        double stealth = b.effectiveStealth(tile.getTemperature(), tile.getMoisture());
+        double detectScore = sensitivity + noise - stealth * falloff;
         if (detectScore > 0) {
           found.add(b);
         }

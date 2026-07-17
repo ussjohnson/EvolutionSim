@@ -33,6 +33,7 @@ public final class SettingsPanel extends JPanel {
   private final JSpinner duration = intSpinner(0, 0, 1000000);
   private final JSpinner seed = intSpinner(42, 0, Integer.MAX_VALUE);
   private final JCheckBox wraparound = new JCheckBox("Wraparound map (edges connect)");
+  private final JSpinner founderSpeciesCount = intSpinner(1, 1, 20);
   private final DefaultTableModel geneModel;
 
   public SettingsPanel(Consumer<SimSettings> onStart) {
@@ -76,6 +77,12 @@ public final class SettingsPanel extends JPanel {
     form.add(new JLabel("Duration (ticks, 0 = until Stop)")); form.add(duration);
     form.add(new JLabel("Random seed"));         form.add(seed);
     form.add(new JLabel());                      form.add(wraparound);
+    JLabel foundersLabel = new JLabel("Starting species (1 = single band)");
+    foundersLabel.setToolTipText("<html>When &gt;1, cluster centers are spread across each "
+        + "gene's full range (ignoring the table below) so the run starts already speciated, "
+        + "instead of relying on in-run drift.</html>");
+    founderSpeciesCount.setToolTipText(foundersLabel.getToolTipText());
+    form.add(foundersLabel); form.add(founderSpeciesCount);
     JPanel wrap = new JPanel(new BorderLayout());
     wrap.add(form, BorderLayout.NORTH);
     wrap.setPreferredSize(new Dimension(300, 400));
@@ -112,6 +119,7 @@ public final class SettingsPanel extends JPanel {
     s.durationTicks = (Integer) duration.getValue();
     s.seed = ((Number) seed.getValue()).longValue();
     s.wraparound = wraparound.isSelected();
+    s.founderSpeciesCount = (Integer) founderSpeciesCount.getValue();
     for (GeneType t : GeneType.ALL) {
       int i = t.ordinal();
       s.startMin[i] = ((Number) geneModel.getValueAt(i, 1)).doubleValue();

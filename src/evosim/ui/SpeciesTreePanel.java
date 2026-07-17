@@ -62,7 +62,7 @@ public final class SpeciesTreePanel extends JPanel {
       Object userObj = ((DefaultMutableTreeNode) value).getUserObject();
       if (userObj instanceof Species s) {
         String label = s.name() + (s.isExtant() ? "" : " (extinct)")
-            + "  —  " + HtmlReportWriter.describe(s.founder())
+            + "  —  " + HtmlReportWriter.describe(s.centroid())
             + "  ·  peak " + s.peakPopulation();
         setText(label);
         setIcon(new SwatchIcon(new Color(s.color())));

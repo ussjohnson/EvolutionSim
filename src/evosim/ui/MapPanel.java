@@ -5,21 +5,36 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Polygon;
 import java.awt.RenderingHints;
+import java.awt.Shape;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.geom.Ellipse2D;
 import java.util.function.BiConsumer;
 import java.util.function.DoubleConsumer;
 
 import javax.swing.JComponent;
 
 import evosim.engine.Snapshot;
+import evosim.model.BiomeType;
+import evosim.model.GeneType;
 
 /**
- * Paints the terrarium: each tile as a green cell whose brightness tracks its
- * foliage, and each animal as a filled circle in its species colour, sized by
- * the animal's current mass. Reads only the latest immutable {@link Snapshot},
- * never the live model.
+ * Paints the terrarium: each tile is tinted by its {@link BiomeType} and
+ * shaded by its foliage level (darker toward bare ground, full tint at lush
+ * foliage). Each animal is filled in its species' colour (species identity,
+ * not the individual's own genome — see {@code World#snapshot()}), sized by
+ * its current mass, shaped by its DIET (circle/diamond/triangle for
+ * herbivore/omnivore/carnivore) with a DIET-coloured outline (green through
+ * red) as a second, redundant reading of diet, and faded toward transparent
+ * by its effective stealth on the current tile (capped at
+ * {@link #MIN_OPACITY} so even the stealthiest animal stays visible) — so
+ * the dot hints at what the animal is like on top of colour identifying its
+ * species. Any attack that happened this tick ({@link Snapshot.Fight}) is
+ * drawn as a red line between attacker and target with a small "clash" spark
+ * at the midpoint. Reads only the latest immutable {@link Snapshot}, never
+ * the live model.
  *
  * Tile size is a fixed {@link #BASE_CELL} pixels scaled by {@link #getZoom},
  * not "fit to container" — so the panel's preferred size grows with zoom and
@@ -34,6 +49,8 @@ public final class MapPanel extends JComponent {
   private static final double BASE_CELL = 20.0; // pixels per tile at zoom = 1.0
   private static final double MIN_ZOOM = 0.25;
   private static final double MAX_ZOOM = 4.0;
+  /** Even a maximally stealthy animal renders at least this opaque. */
+  private static final double MIN_OPACITY = 0.5;
 
   private volatile Snapshot snap;
   private BiConsumer<Integer, Integer> tileClickListener;
@@ -130,8 +147,12 @@ public final class MapPanel extends JComponent {
         float f = s.foliage[y * s.width + x];
         if (f < 0) f = 0;
         if (f > 1) f = 1;
-        int green = (int) (35 + f * 170);
-        g.setColor(new Color(20, green, 30));
+        int tint = BiomeType.ALL[s.biome[y * s.width + x]].tint();
+        double lightness = 0.5 + 0.5 * f; // bare ground is a darker shade of the biome tint
+        int r = clampByte((int) (((tint >> 16) & 0xFF) * lightness));
+        int gr = clampByte((int) (((tint >> 8) & 0xFF) * lightness));
+        int b = clampByte((int) ((tint & 0xFF) * lightness));
+        g.setColor(new Color(r, gr, b));
         int px = (int) (x * cell);
         int py = (int) (y * cell);
         int w = (int) ((x + 1) * cell) - px;
@@ -147,8 +168,34 @@ public final class MapPanel extends JComponent {
       double r = cell * sizeFrac;
       double cx = d.x * cell + cell / 2.0;
       double cy = d.y * cell + cell / 2.0;
-      g.setColor(new Color(d.rgb));
-      g.fillOval((int) (cx - r / 2), (int) (cy - r / 2), (int) r, (int) r);
+      double stealthNorm = Math.max(0.0, Math.min(1.0, d.stealth));
+      double opacity = 1.0 - (1.0 - MIN_OPACITY) * stealthNorm;
+      int alpha = (int) Math.round(opacity * 255);
+      double diet = d.genomeNorm[GeneType.DIET.ordinal()];
+      Shape shape = animalShape(cx, cy, r, diet);
+
+      Color base = new Color(d.rgb);
+      g.setColor(new Color(base.getRed(), base.getGreen(), base.getBlue(), alpha));
+      g.fill(shape);
+
+      Color outline = dietOutlineColor(diet);
+      g.setColor(new Color(outline.getRed(), outline.getGreen(), outline.getBlue(), alpha));
+      g.setStroke(new BasicStroke(1.5f));
+      g.draw(shape);
+    }
+
+    // Fight indicator: a line between combatants plus a "clash" mark at the midpoint.
+    g.setStroke(new BasicStroke(2f));
+    for (Snapshot.Fight f : s.fights) {
+      double ax = f.ax * cell + cell / 2.0, ay = f.ay * cell + cell / 2.0;
+      double tx = f.tx * cell + cell / 2.0, ty = f.ty * cell + cell / 2.0;
+      g.setColor(new Color(255, 60, 40, 200));
+      g.draw(new java.awt.geom.Line2D.Double(ax, ay, tx, ty));
+      double mx = (ax + tx) / 2.0, my = (ay + ty) / 2.0;
+      double spark = cell * 0.22;
+      g.setColor(new Color(255, 210, 40, 230));
+      g.draw(new java.awt.geom.Line2D.Double(mx - spark, my - spark, mx + spark, my + spark));
+      g.draw(new java.awt.geom.Line2D.Double(mx - spark, my + spark, mx + spark, my - spark));
     }
 
     // Selection highlight.
@@ -163,5 +210,48 @@ public final class MapPanel extends JComponent {
     }
 
     g.dispose();
+  }
+
+  /**
+   * A shape centered at (cx, cy) with bounding-box side {@code r}, chosen by
+   * DIET: circle (herbivore), diamond (omnivore), or triangle (carnivore) —
+   * the same silhouette convention as a predator/prey field guide, so diet
+   * is readable without decoding a colour channel. Returned as a
+   * {@link Shape} so the caller can both fill and stroke the same outline
+   * (see {@link #dietOutlineColor}).
+   */
+  private static Shape animalShape(double cx, double cy, double r, double diet) {
+    double half = r / 2.0;
+    double left = cx - half, top = cy - half, right = cx + half, bottom = cy + half;
+    if (diet < 0.33) {
+      return new Ellipse2D.Double(left, top, r, r);
+    }
+    Polygon p = new Polygon();
+    if (diet < 0.66) {
+      p.addPoint((int) cx, (int) top);
+      p.addPoint((int) right, (int) cy);
+      p.addPoint((int) cx, (int) bottom);
+      p.addPoint((int) left, (int) cy);
+    } else {
+      p.addPoint((int) cx, (int) top);
+      p.addPoint((int) right, (int) bottom);
+      p.addPoint((int) left, (int) bottom);
+    }
+    return p;
+  }
+
+  /**
+   * Diet as a colour, independent of species identity: green (herbivore)
+   * through to red (carnivore), drawn as a stroke around the shape's fill —
+   * a second, redundant encoding of diet (alongside shape) that reads at a
+   * glance without shrinking the map to make out silhouettes.
+   */
+  private static Color dietOutlineColor(double diet) {
+    float hue = (float) ((1.0 - diet) / 3.0); // 0 = red (carnivore) .. 1/3 = green (herbivore)
+    return Color.getHSBColor(hue, 0.85f, 0.9f);
+  }
+
+  private static int clampByte(int v) {
+    return Math.max(0, Math.min(255, v));
   }
 }

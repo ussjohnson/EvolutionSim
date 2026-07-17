@@ -14,18 +14,22 @@ public final class Snapshot {
   public final int tick;
   public final int population;
   public final float[] foliage;             // length width*height, row-major
+  public final byte[] biome;                // length width*height, row-major; BiomeType ordinal
   public final List<Dot> dots;              // one per living animal
   public final List<SpeciesCount> species;  // extant species, for the sidebar
+  public final List<Fight> fights;          // this tick's attacks, for the map's fight indicator
 
-  public Snapshot(int width, int height, int tick, int population,
-                  float[] foliage, List<Dot> dots, List<SpeciesCount> species) {
+  public Snapshot(int width, int height, int tick, int population, float[] foliage, byte[] biome,
+                  List<Dot> dots, List<SpeciesCount> species, List<Fight> fights) {
     this.width = width;
     this.height = height;
     this.tick = tick;
     this.population = population;
     this.foliage = foliage;
+    this.biome = biome;
     this.dots = dots;
     this.species = species;
+    this.fights = fights;
   }
 
   /**
@@ -46,11 +50,12 @@ public final class Snapshot {
     public final float maxEnergy;
     public final float hp;
     public final float maxHp;
+    public final float stealth;       // effective stealth on the animal's current tile; drives map opacity
     public final double[] genomeNorm; // GeneType order, for the inspector's full-genome view
 
     public Dot(int id, int x, int y, int rgb, float mass, float maxMass, int speciesId,
                int birthTick, float energy, float maxEnergy, float hp, float maxHp,
-               double[] genomeNorm) {
+               float stealth, double[] genomeNorm) {
       this.id = id;
       this.x = x;
       this.y = y;
@@ -63,7 +68,20 @@ public final class Snapshot {
       this.maxEnergy = maxEnergy;
       this.hp = hp;
       this.maxHp = maxHp;
+      this.stealth = stealth;
       this.genomeNorm = genomeNorm;
+    }
+  }
+
+  /** One attack this tick: an attacker at (ax, ay) against a target at (tx, ty). */
+  public static final class Fight {
+    public final int ax, ay, tx, ty;
+
+    public Fight(int ax, int ay, int tx, int ty) {
+      this.ax = ax;
+      this.ay = ay;
+      this.tx = tx;
+      this.ty = ty;
     }
   }
 

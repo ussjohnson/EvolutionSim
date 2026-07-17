@@ -18,6 +18,12 @@ public final class SimSettings {
   public int durationTicks = 0; // 0 = run until the user stops it
   public long seed = 42;
   public boolean wraparound = false; // off = bounded edges (today's default behavior)
+  // Number of distinct founding gene-clusters to seed. 1 (default) is today's
+  // behavior: one narrow band, speciation emerges from in-run drift. >1
+  // spreads that many cluster centers across each gene's full range (see
+  // World#seedPopulation) so the run starts with that many already-distinct
+  // species instead of waiting for drift to produce them.
+  public int founderSpeciesCount = 1;
 
   // Per-gene initial value range, indexed by GeneType.ordinal().
   public final double[] startMin = new double[GeneType.COUNT];
@@ -51,6 +57,8 @@ public final class SimSettings {
     if (baseFertility < 0) baseFertility = 0;
     if (baseFertility > 1) baseFertility = 1;
     if (durationTicks < 0) durationTicks = 0;
+    if (founderSpeciesCount < 1) founderSpeciesCount = 1;
+    if (founderSpeciesCount > population) founderSpeciesCount = population;
     for (GeneType t : GeneType.ALL) {
       int i = t.ordinal();
       startMin[i] = clamp(startMin[i], t.min(), t.max());

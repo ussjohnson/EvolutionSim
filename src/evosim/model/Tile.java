@@ -12,14 +12,27 @@ public class Tile {
   private double fertility;
   private double baseFertility;
   private double foliage;
+  private final BiomeType biome;
+  private final double temperature; // normalized [0,1], from world-gen noise; see BiomeType
+  private final double moisture;    // normalized [0,1], from world-gen noise; see BiomeType
   private Animal resident;
 
   public static final double MAX_FOLIAGE = 1.0;
 
-  public Tile(double foliage, double fertility) {
+  public Tile(double foliage, double fertility, BiomeType biome, double temperature, double moisture) {
     this.foliage = foliage;
     this.fertility = fertility;
     this.baseFertility = fertility;
+    this.biome = biome;
+    this.temperature = temperature;
+    this.moisture = moisture;
+  }
+  /** Falls back to the biome's own ideal climate point when no tile-specific noise sample is given. */
+  public Tile(double foliage, double fertility, BiomeType biome) {
+    this(foliage, fertility, biome, biome.idealTemperature(), biome.idealMoisture());
+  }
+  public Tile(double foliage, double fertility) {
+    this(foliage, fertility, BiomeType.GRASSLAND);
   }
   public Tile(double foliage) {
     this(foliage, 0.2);
@@ -28,9 +41,9 @@ public class Tile {
     this(0.5);
   }
 
-  /** Regrow foliage and let degraded fertility creep back toward its baseline. */
+  /** Regrow foliage (scaled by the tile's biome) and let degraded fertility creep back toward its baseline. */
   public void recover(Random rng) {
-    foliage += fertility * rng.nextDouble();
+    foliage += fertility * biome.regenMultiplier() * rng.nextDouble();
     if (foliage > MAX_FOLIAGE) foliage = MAX_FOLIAGE;
     if (fertility < baseFertility) fertility += 0.01 * rng.nextDouble();
   }
@@ -72,5 +85,14 @@ public class Tile {
   }
   public Animal getResident() {
     return resident;
+  }
+  public BiomeType getBiome() {
+    return biome;
+  }
+  public double getTemperature() {
+    return temperature;
+  }
+  public double getMoisture() {
+    return moisture;
   }
 }

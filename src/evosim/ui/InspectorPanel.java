@@ -10,6 +10,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 
 import evosim.engine.Snapshot;
+import evosim.model.BiomeType;
 import evosim.model.GeneType;
 import evosim.report.HtmlReportWriter;
 
@@ -54,6 +55,8 @@ public final class InspectorPanel extends JPanel {
 
     StringBuilder sb = new StringBuilder();
     sb.append("Tile (").append(selX).append(", ").append(selY).append(")\n");
+    BiomeType biome = BiomeType.ALL[s.biome[selY * s.width + selX]];
+    sb.append("Biome: ").append(biome.label()).append('\n');
     float foliage = s.foliage[selY * s.width + selX];
     sb.append(String.format("Foliage: %.0f%%%n%n", foliage * 100));
 

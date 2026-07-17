@@ -11,6 +11,7 @@ import java.util.List;
 import evosim.engine.SimTime;
 import evosim.engine.StatsCollector;
 import evosim.engine.World;
+import evosim.model.BiomeType;
 import evosim.model.GeneType;
 import evosim.model.Species;
 import evosim.model.SpeciesLineage;
@@ -27,7 +28,6 @@ public final class HtmlReportWriter {
 
   /** Chart/table only include species whose population ever reached this. */
   private static final int SIGNIFICANT_PEAK = 2;
-  private static final int MAX_CHART_LINES = 12;
 
   public static void write(World w, Path out) throws IOException {
     StatsCollector stats = w.stats();
@@ -45,19 +45,31 @@ public final class HtmlReportWriter {
     int[] xTicks = toIntArray(stats.sampleTicks());
     int samples = xTicks.length;
 
-    // Chart series in lineage (depth-first) order, left-padded to the shared
-    // axis, so each species' band sits directly beside its parent's — a
-    // child's band visibly splits off at its founding tick. DFS order is a
-    // valid prefix-truncatable forest ordering, so simply capping the list
-    // can't orphan a shown child from an unshown parent.
+    // Every significant species gets a row, in lineage (depth-first) order,
+    // so a child's row sits directly beside its parent's and branches off
+    // visibly at its founding tick — no line-count cap, so species founded
+    // late in a long run always appear.
     List<Species> lineageOrder = SpeciesLineage.dfsOrder(significant);
-    List<SvgChart.Series> series = new ArrayList<>();
-    for (int i = 0; i < Math.min(MAX_CHART_LINES, lineageOrder.size()); i++) {
-      Species s = lineageOrder.get(i);
-      series.add(new SvgChart.Series(s.name(), toHex(s.color()),
-          leftPad(s.populationHistory(), samples)));
+    java.util.Map<Integer, Integer> rowOf = new java.util.HashMap<>();
+    for (int i = 0; i < lineageOrder.size(); i++) rowOf.put(lineageOrder.get(i).id(), i);
+    List<SvgChart.LineageRow> rows = new ArrayList<>();
+    for (Species s : lineageOrder) {
+      Integer parentRow = rowOf.get(s.parentSpeciesId());
+      String range = s.isExtant()
+          ? ("born tick " + s.birthTick() + ", still alive")
+          : ("tick " + s.birthTick() + "–" + s.extinctionTick());
+      String tooltip = s.name() + (s.isExtant() ? "" : " (extinct)") + " — "
+          + describe(s.centroid()) + " · " + range + " · peak " + s.peakPopulation();
+      rows.add(new SvgChart.LineageRow(s.name(), tooltip, toHex(s.color()),
+          SpeciesLineage.leftPad(s.populationHistory(), samples), s.birthTick(),
+          (parentRow != null) ? parentRow : -1));
     }
-    String chart = SvgChart.streamChart("Species family tree & population over time", xTicks, series, 860, 420);
+    String chart = SvgChart.lineageTree("Species family tree & population over time", xTicks, rows, 900);
+
+    List<Integer> fertilityPct = new ArrayList<>(samples);
+    for (double f : stats.averageFertility()) fertilityPct.add((int) Math.round(f * 100));
+    String fertilityChart = SvgChart.lineChart("Average plant fertility over time (%)", xTicks,
+        List.of(new SvgChart.Series("fertility", "#4a9c4a", toIntArray(fertilityPct))), 860, 260);
 
     StringBuilder html = new StringBuilder();
     html.append("<!doctype html>\n<html lang='en'><head><meta charset='utf-8'>\n");
@@ -94,6 +106,8 @@ public final class HtmlReportWriter {
 
     html.append("<h2>Family tree</h2>\n<div class='chart'>").append(chart).append("</div>\n");
 
+    html.append("<h2>Environment</h2>\n<div class='chart'>").append(fertilityChart).append("</div>\n");
+
     appendSuperlatives(html, significant, endTick);
 
     html.append("<h2>Taxonomy</h2>\n");
@@ -109,8 +123,8 @@ public final class HtmlReportWriter {
       html.append("<tr>")
           .append("<td><span class='sw' style='background:").append(toHex(s.color())).append("'></span>")
           .append(esc(s.name())).append(s.isExtant() ? "" : " <em>(extinct)</em>")
-          .append(detailsGenes(s.founder())).append("</td>")
-          .append("<td>").append(esc(describe(s.founder()))).append("</td>")
+          .append(detailsGenes(s.centroid())).append("</td>")
+          .append("<td>").append(esc(describe(s.centroid()))).append("</td>")
           .append("<td>").append(parent != null ? esc(parent) : "&mdash;").append("</td>")
           .append("<td>").append(s.lifespan(endTick)).append(" t</td>")
           .append("<td>").append(s.totalDeaths() > 0
@@ -147,7 +161,7 @@ public final class HtmlReportWriter {
   private static void appendTaxonomyNode(StringBuilder html, Species s, java.util.Map<Integer, List<Species>> children) {
     html.append("<li><div class='row'><span class='sw' style='background:").append(toHex(s.color())).append("'></span>")
         .append("<b>").append(esc(s.name())).append("</b>").append(s.isExtant() ? "" : " <em>(extinct)</em>")
-        .append("<span class='stat'>").append(esc(describe(s.founder())))
+        .append("<span class='stat'>").append(esc(describe(s.centroid())))
         .append(" &middot; peak ").append(s.peakPopulation()).append("</span></div>\n");
     List<Species> kids = children.get(s.id());
     if (kids != null && !kids.isEmpty()) {
@@ -166,7 +180,7 @@ public final class HtmlReportWriter {
     for (Species s : sp) {
       if (s.lifespan(endTick) > longest.lifespan(endTick)) longest = s;
       if (s.peakPopulation() > abundant.peakPopulation()) abundant = s;
-      if (s.founder()[GeneType.DIET.ordinal()] > carnivore.founder()[GeneType.DIET.ordinal()]) carnivore = s;
+      if (s.centroid()[GeneType.DIET.ordinal()] > carnivore.centroid()[GeneType.DIET.ordinal()]) carnivore = s;
     }
     html.append("<h2>Notable</h2>\n<ul>\n");
     html.append("<li><b>Longest-lived:</b> ").append(esc(longest.name()))
@@ -174,7 +188,7 @@ public final class HtmlReportWriter {
     html.append("<li><b>Most abundant:</b> ").append(esc(abundant.name()))
         .append(" (peak ").append(abundant.peakPopulation()).append(")</li>\n");
     html.append("<li><b>Most carnivorous lineage:</b> ").append(esc(carnivore.name()))
-        .append(" (diet ").append(pct(carnivore.founder()[GeneType.DIET.ordinal()])).append(")</li>\n");
+        .append(" (diet ").append(pct(carnivore.centroid()[GeneType.DIET.ordinal()])).append(")</li>\n");
     html.append("</ul>\n");
   }
 
@@ -189,7 +203,11 @@ public final class HtmlReportWriter {
     return sb.toString();
   }
 
-  /** A short natural-language description of a founder's normalized genome. */
+  /**
+   * A short natural-language description of a genome — a species' current
+   * centroid (tracks live drift, not frozen at founding) or an individual's
+   * own genome.
+   */
   public static String describe(double[] n) {
     double diet = n[GeneType.DIET.ordinal()];
     String feeding = diet < 0.33 ? "herbivore" : (diet < 0.66 ? "omnivore" : "carnivore");
@@ -197,22 +215,15 @@ public final class HtmlReportWriter {
     String build = size < 0.33 ? "small" : (size < 0.66 ? "mid-sized" : "large");
     double speed = n[GeneType.LAND_SPEED.ordinal()];
     String pace = speed < 0.33 ? "slow" : (speed < 0.66 ? "moderate" : "fast");
-    return build + ", " + pace + " " + feeding;
+    BiomeType camoBiome = BiomeType.classify(
+        n[GeneType.CAMO_TEMP.ordinal()], n[GeneType.CAMO_MOISTURE.ordinal()]);
+    String camo = camoBiome.label().toLowerCase() + "-camouflaged";
+    return build + ", " + pace + ", " + camo + " " + feeding;
   }
 
   private static void card(StringBuilder html, int n, String label) {
     html.append("<div class='card'><div class='n'>").append(n)
         .append("</div><div class='l'>").append(label).append("</div></div>\n");
-  }
-
-  private static int[] leftPad(List<Integer> history, int target) {
-    int[] out = new int[target];
-    int offset = target - history.size();
-    for (int i = 0; i < history.size(); i++) {
-      int idx = offset + i;
-      if (idx >= 0 && idx < target) out[idx] = history.get(i);
-    }
-    return out;
   }
 
   private static int[] toIntArray(List<Integer> list) {

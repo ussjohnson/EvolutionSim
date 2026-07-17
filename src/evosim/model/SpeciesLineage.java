@@ -68,4 +68,15 @@ public final class SpeciesLineage {
     }
     return false;
   }
+
+  /** Left-pads a population history to a shared sample-tick axis length (zeros before the species existed). */
+  public static int[] leftPad(List<Integer> history, int target) {
+    int[] out = new int[target];
+    int offset = target - history.size();
+    for (int i = 0; i < history.size(); i++) {
+      int idx = offset + i;
+      if (idx >= 0 && idx < target) out[idx] = history.get(i);
+    }
+    return out;
+  }
 }

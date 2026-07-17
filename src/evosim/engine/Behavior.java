@@ -10,6 +10,7 @@ import evosim.model.Balance;
 import evosim.model.GeneType;
 import evosim.model.Genome;
 import evosim.model.Species;
+import evosim.model.Tile;
 
 /**
  * The per-animal decision and action logic for a single tick: perceive,
@@ -18,7 +19,7 @@ import evosim.model.Species;
  *
  * Decision priority: respond to a nearby threat (fight or flee) → hunt when
  * hungry and carnivorous → graze when hungry and herbivorous → reproduce →
- * wander from depleted ground → rest.
+ * seek a better-matching biome → wander from depleted ground → rest.
  */
 final class Behavior {
 
@@ -34,6 +35,10 @@ final class Behavior {
     boolean canHunt = a.n(GeneType.DIET) > 0.3;
 
     for (Animal b : seen) {
+      // Same species is never a threat or prey — a hard biological boundary
+      // against cannibalism, on top of the fuzzy genetic kin-distance check
+      // below (which only protects close relatives within one species).
+      if (b.getSpeciesId() == a.getSpeciesId()) continue;
       boolean kin = ag.distance(b.getGenome()) < kinRange;
       if (kin) continue;
       int d = cheb(w, a, b);
@@ -94,14 +99,32 @@ final class Behavior {
       acted = reproduce(w, a, newborns);
     }
 
-    // 5. Wander from depleted ground.
+    // 5. Seek a better-matching biome when idle somewhere climatically poor
+    // for this animal — reuses CAMO_TEMP/CAMO_MOISTURE (the climate an
+    // animal is adapted to blend into, see Animal#effectiveStealth) as its
+    // habitat preference too, rather than a separate gene: the climate an
+    // animal hides best in is also the one it gravitates toward.
+    if (!acted) {
+      Tile home = w.tileAt(a.getX(), a.getY());
+      double homeMismatch = climateMismatch(a, home);
+      if (homeMismatch > Balance.BIOME_SEEK_MISMATCH_TH && rng.nextDouble() < a.n(GeneType.WANDERLUST)) {
+        int[] better = betterBiomeAdjacent(w, a, homeMismatch);
+        if (better != null) {
+          w.moveAnimal(a, better[0], better[1]);
+          a.addEnergy(-a.moveCost());
+          acted = true;
+        }
+      }
+    }
+
+    // 6. Wander from depleted ground.
     if (!acted && w.tileAt(a.getX(), a.getY()).getFoliage() < 0.05
         && rng.nextDouble() < a.n(GeneType.WANDERLUST)) {
       wander(w, a);
       acted = true;
     }
 
-    // 6. Upkeep: metabolism, growth, death check (always runs).
+    // 7. Upkeep: metabolism, growth, death check (always runs).
     upkeep(w, a);
   }
 
@@ -123,6 +146,7 @@ final class Behavior {
   }
 
   private void attack(World w, Animal a, Animal b) {
+    w.recordFight(a.getX(), a.getY(), b.getX(), b.getY());
     double damage = a.n(GeneType.STRENGTH) * Balance.DMG_K * (a.getMass() / b.getMass())
         - b.n(GeneType.DURABILITY) * Balance.ARMOR_K;
     b.damage(Math.max(0, damage));
@@ -131,7 +155,10 @@ final class Behavior {
       w.removeFromGrid(b);
       w.species().recordDeath(b.getSpeciesId(), w.currentTick(), Species.DeathCause.PREDATION, b.getBirthTick());
       w.species().recordKill(a.getSpeciesId());
-      a.addEnergy(b.getMass() * Balance.MEAT_ENERGY * a.n(GeneType.DIET));
+      // Intra-guild predation (eating another carnivore) yields much less
+      // usable energy than eating an herbivore — see Balance.CARNIVORE_MEAT_PENALTY.
+      double trophicFactor = 1.0 - Balance.CARNIVORE_MEAT_PENALTY * b.n(GeneType.DIET);
+      a.addEnergy(b.getMass() * Balance.MEAT_ENERGY * a.n(GeneType.DIET) * trophicFactor);
     }
   }
 
@@ -144,7 +171,7 @@ final class Behavior {
     double invest = a.getEnergy() * Balance.OFFSPRING_ENERGY_FRACTION;
     a.setEnergy(a.getEnergy() - invest);
     child.setEnergy(Math.min(invest, child.maxEnergy()));
-    child.setSpeciesId(w.species().classify(childGenome, w.currentTick(), a.getSpeciesId()));
+    child.setSpeciesId(w.species().classify(childGenome, w.currentTick(), a.getSpeciesId(), w.rng().get()));
     w.placeNewborn(child, spot[0], spot[1]);
     newborns.add(child);
     return true;
@@ -159,8 +186,10 @@ final class Behavior {
   }
 
   private void upkeep(World w, Animal a) {
-    a.addEnergy(-a.metabolism());
+    Tile t = w.tileAt(a.getX(), a.getY());
+    a.addEnergy(-a.metabolism(t.getBiome().climateStress()));
     a.grow();
+    a.regen();
     if (a.getEnergy() <= 0) {
       a.kill();
       w.removeFromGrid(a);
@@ -236,6 +265,34 @@ final class Behavior {
       }
     }
     return null;
+  }
+
+  /** Euclidean mismatch between an animal's adapted climate and a tile's actual climate. */
+  private static double climateMismatch(Animal a, Tile t) {
+    double dt = a.n(GeneType.CAMO_TEMP) - t.getTemperature();
+    double dm = a.n(GeneType.CAMO_MOISTURE) - t.getMoisture();
+    return Math.sqrt(dt * dt + dm * dm);
+  }
+
+  /** The empty adjacent tile with the lowest climate mismatch, if any beats the current tile's. */
+  private int[] betterBiomeAdjacent(World w, Animal a, double homeMismatch) {
+    int[] best = null;
+    double bestMismatch = homeMismatch;
+    for (int[] off : shuffledNeighbors(w)) {
+      int nx = a.getX() + off[0];
+      int ny = a.getY() + off[1];
+      if (!w.canReach(nx, ny)) continue;
+      nx = w.wrapX(nx);
+      ny = w.wrapY(ny);
+      if (w.residentAt(nx, ny) == null) {
+        double m = climateMismatch(a, w.tileAt(nx, ny));
+        if (m < bestMismatch) {
+          bestMismatch = m;
+          best = new int[] { nx, ny };
+        }
+      }
+    }
+    return best;
   }
 
   private int[] richestAdjacent(World w, Animal a) {

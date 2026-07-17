@@ -88,29 +88,53 @@ public final class SvgChart {
     return svg.toString();
   }
 
+  /** One row of {@link #lineageTree}: a species' population history plus its tree position. */
+  public static final class LineageRow {
+    public final String name;       // short label drawn beside the row
+    public final String tooltip;    // full hover text (name, description, stats)
+    public final String colorHex;
+    public final int[] population;  // aligned to the shared xTicks axis
+    public final int birthTick;
+    public final int parentRow;     // index into the rows list, or -1 if root/parent not shown
+
+    public LineageRow(String name, String tooltip, String colorHex, int[] population,
+                       int birthTick, int parentRow) {
+      this.name = name;
+      this.tooltip = tooltip;
+      this.colorHex = colorHex;
+      this.population = population;
+      this.birthTick = birthTick;
+      this.parentRow = parentRow;
+    }
+  }
+
   /**
-   * A stacked-area ("stream") chart: each series is a filled band whose
-   * thickness is its population, stacked baseline-0 in the given order. Pass
-   * series in {@link evosim.model.SpeciesLineage#dfsOrder} so a species'
-   * band sits directly adjacent to its parent's, visually showing the split
-   * at the tick its population first becomes non-zero.
+   * A branching family-tree diagram: each species is a horizontal ribbon on
+   * its own row (row index order should be {@link evosim.model.SpeciesLineage#dfsOrder},
+   * so a child's row sits near its parent's), thickness tracking population
+   * at each sample (tapering to nothing outside its lifespan), with a
+   * vertical connector back to the parent's row at the child's birth tick —
+   * a branching tree over time, not a stacked-area population chart. Each
+   * ribbon carries an SVG {@code <title>} so hovering shows the species'
+   * info natively in-browser.
    */
-  public static String streamChart(String title, int[] xTicks, List<Series> seriesStackOrder,
-                                    int width, int height) {
-    int padL = 60, padR = 16, padT = 40, padB = 42;
+  public static String lineageTree(String title, int[] xTicks, List<LineageRow> rows, int width) {
+    int padL = 130, padR = 16, padT = 40, padB = 32;
+    int rowHeight = 24;
     int plotW = width - padL - padR;
-    int plotH = height - padT - padB;
+    int plotH = Math.max(1, rows.size()) * rowHeight;
+    int height = padT + plotH + padB;
 
     int n = xTicks.length;
-    int maxX = (n > 0) ? xTicks[n - 1] : 1;
-    if (maxX <= 0) maxX = 1;
+    int maxX = (n > 0) ? Math.max(1, xTicks[n - 1]) : 1;
 
-    int[] cum = new int[n]; // running stack total at each sample, filled in as we go
-    int maxTotal = 1;
-    for (Series s : seriesStackOrder) {
-      for (int i = 0; i < n; i++) maxTotal = Math.max(maxTotal, cum[i] + s.values[i]);
+    int maxPop = 1;
+    for (LineageRow r : rows) {
+      for (int v : r.population) maxPop = Math.max(maxPop, v);
     }
-    int niceMaxY = niceCeil(maxTotal);
+    double maxHalf = rowHeight / 2.0 - 2.0;
+    double minHalf = 1.5;
+    double thicknessScale = maxHalf / Math.sqrt(maxPop);
 
     StringBuilder svg = new StringBuilder();
     svg.append("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ")
@@ -120,46 +144,41 @@ public final class SvgChart {
        .append("' fill='#ffffff'/>\n");
     svg.append("<text x='").append(width / 2).append("' y='24' text-anchor='middle' "
         + "font-size='16' font-weight='bold' fill='#222'>").append(esc(title)).append("</text>\n");
-
-    int ySteps = 4;
-    for (int i = 0; i <= ySteps; i++) {
-      int yVal = niceMaxY * i / ySteps;
-      double y = padT + plotH - (double) i / ySteps * plotH;
-      svg.append("<line x1='").append(padL).append("' y1='").append(fmt(y))
-         .append("' x2='").append(padL + plotW).append("' y2='").append(fmt(y))
-         .append("' stroke='#e6e6e6'/>\n");
-      svg.append("<text x='").append(padL - 8).append("' y='").append(fmt(y + 4))
-         .append("' text-anchor='end' font-size='11' fill='#666'>").append(yVal).append("</text>\n");
-    }
-
-    svg.append("<text x='").append(padL).append("' y='").append(height - 22)
+    svg.append("<text x='").append(padL).append("' y='").append(height - 10)
        .append("' text-anchor='start' font-size='11' fill='#666'>tick 0</text>\n");
-    svg.append("<text x='").append(padL + plotW).append("' y='").append(height - 22)
+    svg.append("<text x='").append(padL + plotW).append("' y='").append(height - 10)
        .append("' text-anchor='end' font-size='11' fill='#666'>tick ").append(maxX).append("</text>\n");
-    svg.append("<text x='").append(padL + plotW / 2).append("' y='").append(height - 8)
-       .append("' text-anchor='middle' font-size='11' fill='#888'>time →</text>\n");
 
-    int[] base = new int[n]; // stack floor for the series currently being drawn
-    for (Series s : seriesStackOrder) {
+    for (int row = 0; row < rows.size(); row++) {
+      LineageRow r = rows.get(row);
+      double centerY = padT + row * rowHeight + rowHeight / 2.0;
+
+      if (r.parentRow >= 0) {
+        double bx = padL + (double) r.birthTick / maxX * plotW;
+        double parentCenterY = padT + r.parentRow * rowHeight + rowHeight / 2.0;
+        svg.append("<line x1='").append(fmt(bx)).append("' y1='").append(fmt(parentCenterY))
+           .append("' x2='").append(fmt(bx)).append("' y2='").append(fmt(centerY))
+           .append("' stroke='").append(r.colorHex).append("' stroke-width='1.5'/>\n");
+      }
+
       String[] topPts = new String[n];
       String[] bottomPts = new String[n];
       for (int i = 0; i < n; i++) {
         double x = padL + (n == 1 ? 0 : (double) xTicks[i] / maxX * plotW);
-        double yTop = padT + plotH - (double) (base[i] + s.values[i]) / niceMaxY * plotH;
-        double yBase = padT + plotH - (double) base[i] / niceMaxY * plotH;
-        topPts[i] = fmt(x) + "," + fmt(yTop);
-        bottomPts[i] = fmt(x) + "," + fmt(yBase);
+        int pop = r.population[i];
+        double half = (pop <= 0) ? 0.0 : Math.max(minHalf, thicknessScale * Math.sqrt(pop));
+        topPts[i] = fmt(x) + "," + fmt(centerY - half);
+        bottomPts[i] = fmt(x) + "," + fmt(centerY + half);
       }
-      // Top edge left-to-right, then bottom edge right-to-left, to close a
-      // non-self-intersecting polygon.
       StringBuilder points = new StringBuilder(String.join(" ", topPts));
       for (int i = n - 1; i >= 0; i--) {
         points.append(' ').append(bottomPts[i]);
       }
-      svg.append("<polygon fill='").append(s.colorHex).append("' fill-opacity='0.85' stroke='")
-         .append(s.colorHex).append("' stroke-width='0.5' points='")
-         .append(points).append("'/>\n");
-      for (int i = 0; i < n; i++) base[i] += s.values[i];
+      svg.append("<g><title>").append(esc(r.tooltip)).append("</title>")
+         .append("<polygon fill='").append(r.colorHex).append("' points='").append(points).append("'/>")
+         .append("</g>\n");
+      svg.append("<text x='6' y='").append(fmt(centerY + 4))
+         .append("' font-size='11' fill='#333'>").append(esc(r.name)).append("</text>\n");
     }
 
     svg.append("</svg>");

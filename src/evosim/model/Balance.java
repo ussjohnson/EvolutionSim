@@ -60,7 +60,7 @@ public final class Balance {
   public static double APPETITE = 0.35;           // base foliage grazed per tick
   public static double APPETITE_MASS_SCALE = 0.25; // extra graze capacity per unit body mass
   public static double PLANT_ENERGY = 3.0;        // energy per unit foliage (× herbivory)
-  public static double MEAT_ENERGY = 7.0;         // energy per unit prey mass (× carnivory)
+  public static double MEAT_ENERGY = 9.0;         // energy per unit prey mass (× carnivory)
   public static double PREY_DISTANCE_WEIGHT = 0.15; // how much distance offsets mass-ratio in prey preference
   public static double MAX_PREY_MASS_RATIO = 3.0; // prey this much bigger than the predator isn't worth attempting
 
@@ -71,6 +71,42 @@ public final class Balance {
   public static double DMG_K = 6.0;               // strength → damage
   public static double ARMOR_K = 3.0;             // durability → damage reduction
   public static double FIGHT_TH = 0.5;            // fight when (defensive + bravery*(massRatio-1)) exceeds this
+  // Predators eating other predators ("intra-guild predation") transfer much
+  // less usable energy than eating an herbivore, scaled by the victim's own
+  // DIET (its trophic level). This closes a real energy-conservation
+  // loophole: MEAT_ENERGY per unit mass (9.0) vastly exceeds GROWTH_ENERGY
+  // per unit mass invested (0.6), so without this penalty a closed loop of
+  // carnivores repeatedly killing each other could manufacture net energy
+  // from nothing and sustain a population indefinitely with no herbivores or
+  // plants anywhere in the food chain. 0.88 keeps a full-carnivore kill's
+  // yield (9.0*0.12=1.08 per unit mass) below what it cost to grow that mass
+  // in the first place, so the loop is a net loss even before accounting for
+  // the metabolism/movement/reproduction overhead a real hunt also pays —
+  // scaling the yield down by the victim's DIET keeps genuine herbivore-
+  // hunting at full value (DIET=0 prey is unaffected) while making
+  // predator-on-predator predation unsustainable on its own, so an
+  // all-carnivore population still collapses once its actual prey base is
+  // gone. Verified against seed 42 / fertility 0.1 / 80x60 / wraparound (the
+  // original runaway-carnivore repro case, which now purges to zero
+  // carnivores by ~tick 6500) and a controlled mixed-cohort probe seeding a
+  // deliberately well-built predator (high STRENGTH/SIZE/LAND_SPEED)
+  // alongside herbivores, which hunted successfully but still could not
+  // out-earn its own baseline metabolism over a full lifetime — a deeper,
+  // pre-existing carnivory-economics problem (see MEAT_ENERGY) independent
+  // of this penalty.
+  public static double CARNIVORE_MEAT_PENALTY = 0.88;
+  // Passive healing: a small fraction of max HP per tick, paid for out of
+  // energy reserves so it competes with growth/reproduction rather than
+  // being free — an animal too hungry to spare the cost doesn't heal.
+  public static double HP_REGEN_RATE = 0.01;         // fraction of maxHp healed per tick
+  public static double HP_REGEN_ENERGY_COST = 0.5;   // energy spent per HP point regenerated
+  // How poorly a tile's actual climate must mismatch an animal's adapted
+  // climate (CAMO_TEMP/CAMO_MOISTURE) before it's worth a tick of movement
+  // to seek a better one (see Behavior's biome-seeking priority). Mismatch
+  // ranges 0 (perfect match) to sqrt(2)~=1.41 (opposite corners); 0.35 is
+  // meaningfully poor without triggering on every minor gradient, so
+  // well-matched animals mostly settle rather than churning tile to tile.
+  public static double BIOME_SEEK_MISMATCH_TH = 0.35;
 
   // --- Reproduction ---
   public static double OFFSPRING_ENERGY_FRACTION = 0.4; // share of parent energy passed to child
@@ -100,6 +136,14 @@ public final class Balance {
   // speciate again once it had accumulated more than a few hundred births,
   // no matter how far the population had actually drifted.
   public static int CENTROID_HORIZON = 300;
+  // A founded species' display colour inherits its parent's hue plus a
+  // random nudge of up to this many degrees either way (see
+  // SpeciesRegistry#colorFor) — small enough that a family of related
+  // species reads as visibly related (a color gradient across the taxonomy
+  // tree/family-tree chart), large enough that siblings founded from the
+  // same parent are still distinguishable from each other and from the
+  // parent itself.
+  public static double SPECIES_HUE_JITTER = 35.0;
 
   // --- Founding population ---
   // Default width (as a fraction of each gene's full range, centered on the
@@ -136,6 +180,42 @@ public final class Balance {
   // a long life is bought with the SIZE tradeoffs that already exist
   // (slower growth, more food needed, worse stealth), not a free perk.
   public static double AGING_SIZE_PROTECTION = 0.5;
+
+  // --- Biomes ---
+  // World generation classifies each tile into a BiomeType from two blended
+  // value-noise fields (temperature, moisture) — see the NoiseField/World
+  // constructor and BiomeType#classify. This is the spatial niche
+  // differentiation this class's doc comment above notes the ecosystem
+  // lacked when it only had one undifferentiated food resource: each biome
+  // now has its own fertility, foliage-regrowth rate, and climate-stress
+  // upkeep cost, so different regions favor different survival strategies
+  // instead of one dominant lineage winning everywhere. BIOME_NOISE_SCALE is
+  // the coarse lattice spacing in tiles: larger values produce a handful of
+  // large, contiguous regions; smaller values fragment the map into many
+  // small patches. Chosen so a default 40x30 map yields roughly 4-8 distinct
+  // regions, closer to real-world biome scale than tile-by-tile noise.
+  public static double BIOME_NOISE_SCALE = 9.0;
+  // Bergmann's rule: larger animals retain heat more efficiently, so SIZE
+  // discounts the *climate* portion of metabolism specifically (see
+  // Animal#metabolism(double)) — the same "SIZE buys a discount on an
+  // upkeep cost" pattern already used for raw metabolic upkeep
+  // (SIZE_METABOLIC_DISCOUNT) and aging pace (AGING_SIZE_PROTECTION). Never
+  // a free win: SIZE still costs slower growth, more food needed, and worse
+  // stealth, so a large cold-hardy lineage is a genuine tradeoff, not a
+  // strictly dominant strategy — it just makes harsh biomes survivable for
+  // a body plan that already pays for the privilege elsewhere.
+  public static double SIZE_CLIMATE_PROTECTION = 0.6;
+  // Camouflage is biome-specific: an animal's effective stealth is scaled
+  // down by the mismatch between its adapted climate (CAMO_TEMP/
+  // CAMO_MOISTURE genes) and the tile it's standing on (see
+  // Animal#effectiveStealth(double,double)). Mismatch ranges 0 (perfect
+  // match) to sqrt(2)~=1.41 (climatically opposite corners of the map's
+  // temperature/moisture space); CAMO_MISMATCH_K=0.7 means a fully
+  // mismatched animal's stealth bonus is wiped out entirely (factor 0)
+  // while a well-matched one keeps its full STEALTH value — so
+  // specializing to hide in dense rainforest cover buys little if that
+  // lineage later spreads into open tundra.
+  public static double CAMO_MISMATCH_K = 0.7;
 
   // --- Sampling / reporting ---
   public static int SAMPLE_INTERVAL = 5;          // ticks between population samples

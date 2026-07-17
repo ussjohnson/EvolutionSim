@@ -14,7 +14,6 @@ import java.util.Random;
 public class Animal {
   private final Genome genome;
   private final int id;
-  private final int color;
 
   private int x, y;
   private double mass;
@@ -27,7 +26,6 @@ public class Animal {
   public Animal(Genome genome, int id) {
     this.genome = genome;
     this.id = id;
-    this.color = calcColor();
     this.mass = maxMass() * Balance.START_MASS_FRACTION;
     this.hp = maxHp();
     this.energy = maxEnergy() * Balance.START_ENERGY_FRACTION;
@@ -54,12 +52,26 @@ public class Animal {
    * regardless of size.
    */
   public double metabolism() {
+    return metabolism(0.0);
+  }
+
+  /**
+   * As {@link #metabolism()}, plus extra upkeep from environmental climate
+   * stress (see {@link BiomeType#climateStress()}) — living somewhere
+   * hostile costs more just to stay alive. SIZE discounts this specific
+   * cost (Bergmann's rule: larger bodies retain heat more efficiently), so a
+   * big animal shrugs off a harsh climate that would burden a small one,
+   * while still paying SIZE's usual costs (growth time, food, stealth)
+   * everywhere else — never a free win.
+   */
+  public double metabolism(double climateStress) {
     double sum = 0.0;
     for (GeneType t : GeneType.ALL) {
       sum += t.metabolicWeight() * n(t);
     }
     double economyOfScale = 1.0 - Balance.SIZE_METABOLIC_DISCOUNT * n(GeneType.SIZE);
-    return Balance.BASE_META + sum * economyOfScale;
+    double climateProtection = 1.0 - Balance.SIZE_CLIMATE_PROTECTION * n(GeneType.SIZE);
+    return Balance.BASE_META * (1.0 + climateStress * climateProtection) + sum * economyOfScale;
   }
 
   /** Energy spent per tile of movement. */
@@ -119,21 +131,32 @@ public class Animal {
     return Math.min(1.0, hazard);
   }
 
-  /** Stealth after the size penalty — big animals simply can't hide well. */
+  /**
+   * Stealth assuming a perfect climate match (see
+   * {@link #effectiveStealth(double, double)}) — used where no tile context
+   * is available.
+   */
   public double effectiveStealth() {
-    return n(GeneType.STEALTH) * (1.0 - 0.5 * n(GeneType.SIZE));
+    return effectiveStealth(n(GeneType.CAMO_TEMP), n(GeneType.CAMO_MOISTURE));
   }
 
   /**
-   * Display colour (see {@link Coloring}). Size deliberately does not affect
-   * colour (it sizes the on-screen icon instead).
+   * Stealth after the size penalty (big animals simply can't hide well) and
+   * a camouflage mismatch penalty: {@link GeneType#CAMO_TEMP}/
+   * {@link GeneType#CAMO_MOISTURE} are the climate this animal is adapted to
+   * blend into, so its stealth bonus is strongest on a tile matching that
+   * climate and fades the further the tile's actual temperature/moisture
+   * (see {@link Tile#getTemperature()}/{@link Tile#getMoisture()}) drifts
+   * from it — camouflage specialized for one biome doesn't fully transfer to
+   * a climatically different one.
    */
-  public final int calcColor() {
-    return Coloring.pack(n(GeneType.DIET), n(GeneType.FECUNDITY), n(GeneType.LAND_SPEED));
-  }
-
-  public String getColorHex() {
-    return String.format("#%06X", color & 0xFFFFFF);
+  public double effectiveStealth(double tileTemperature, double tileMoisture) {
+    double base = n(GeneType.STEALTH) * (1.0 - 0.5 * n(GeneType.SIZE));
+    double dt = n(GeneType.CAMO_TEMP) - tileTemperature;
+    double dm = n(GeneType.CAMO_MOISTURE) - tileMoisture;
+    double mismatch = Math.sqrt(dt * dt + dm * dm); // 0 (perfect match) .. ~1.41 (opposite corners)
+    double camoFactor = Math.max(0.0, 1.0 - Balance.CAMO_MISMATCH_K * mismatch);
+    return base * camoFactor;
   }
 
   // --- State mutation ---
@@ -157,6 +180,23 @@ public class Animal {
     if (amount > 0) hp -= amount;
   }
 
+  /**
+   * Slowly heals HP each tick out of spare energy reserves — never free:
+   * healing competes with growth/reproduction for the same energy pool, and
+   * an animal too hungry to spare the cost simply doesn't heal that tick.
+   */
+  public void regen() {
+    if (hp >= maxHp()) {
+      hp = maxHp();
+      return;
+    }
+    double amount = Balance.HP_REGEN_RATE * maxHp();
+    double cost = amount * Balance.HP_REGEN_ENERGY_COST;
+    if (energy <= cost) return;
+    hp = Math.min(maxHp(), hp + amount);
+    energy -= cost;
+  }
+
   public void kill() {
     alive = false;
   }
@@ -165,7 +205,6 @@ public class Animal {
 
   public Genome getGenome() { return genome; }
   public int getId() { return id; }
-  public int getColorInt() { return color; }
   public int getX() { return x; }
   public int getY() { return y; }
   public void setPosition(int x, int y) { this.x = x; this.y = y; }
