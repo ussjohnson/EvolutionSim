@@ -29,6 +29,11 @@ public final class SimSettings {
   // runs; seasonLength is the number of ticks in one full year.
   public boolean seasonsEnabled = true;
   public int seasonLength = Balance.SEASON_LENGTH;
+  // Sexual reproduction (recombination + mate choice on ORNAMENT) and a
+  // density/frequency-dependent disease system. On by default for GUI runs;
+  // both add realism and help maintain long-term diversity.
+  public boolean sexualReproduction = Balance.SEXUAL_DEFAULT;
+  public boolean diseaseEnabled = true;
 
   // Per-gene initial value range, indexed by GeneType.ordinal().
   public final double[] startMin = new double[GeneType.COUNT];
@@ -40,17 +45,36 @@ public final class SimSettings {
 
   /**
    * Reset every gene's start range to the default founding band: a narrow
-   * range centered on the gene's midpoint (see {@link Balance#FOUNDER_GENE_BAND})
-   * rather than its full allowed range, so the starting population begins as
-   * a handful of related founders and speciates from there over the run.
+   * range centered on the gene's default center (see
+   * {@link Balance#FOUNDER_GENE_BAND} and {@link #defaultCenter}) rather than
+   * its full allowed range, so the starting population begins as a handful of
+   * related founders and speciates from there over the run.
    */
   public void resetGeneRangesToDefault() {
     for (GeneType t : GeneType.ALL) {
-      double mid = (t.min() + t.max()) / 2.0;
+      double center = defaultCenter(t);
       double half = Balance.FOUNDER_GENE_BAND * (t.max() - t.min()) / 2.0;
-      startMin[t.ordinal()] = mid - half;
-      startMax[t.ordinal()] = mid + half;
+      startMin[t.ordinal()] = center - half;
+      startMax[t.ordinal()] = center + half;
     }
+  }
+
+  /**
+   * The raw value a gene's founding band is centered on. Most genes start at
+   * their midpoint, but the costly specialization traits — thermal insulation,
+   * a sexual-display ornament, and (to a lesser degree) immune investment —
+   * start low: a founding population isn't pre-adapted to fur, plumage, or a
+   * particular pathogen, so those traits should *evolve up* only where and when
+   * selection (a cold biome, sexual competition, an epidemic) actually favours
+   * them, rather than burdening every founder with their upkeep from tick 0.
+   */
+  private static double defaultCenter(GeneType t) {
+    double mid = (t.min() + t.max()) / 2.0;
+    return switch (t) {
+      case INSULATION, ORNAMENT -> t.min() + 0.15 * (t.max() - t.min());
+      case IMMUNITY -> t.min() + 0.30 * (t.max() - t.min());
+      default -> mid;
+    };
   }
 
   /** Clamp all fields into valid ranges so a malformed form can't break a run. */

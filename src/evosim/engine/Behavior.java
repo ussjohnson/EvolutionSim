@@ -28,18 +28,31 @@ final class Behavior {
     Random rng = w.rng().get();
     List<Animal> seen = Perception.detect(w, a);
 
-    Animal threat = null, prey = null;
+    Animal threat = null, prey = null, mate = null;
     int threatDist = Integer.MAX_VALUE, preyDist = Integer.MAX_VALUE;
     double bestPreyScore = Double.MAX_VALUE;
+    double bestMateOrnament = -1.0;
     Genome ag = a.getGenome();
     double kinRange = a.n(GeneType.INCLUSIVITY) * Balance.MAX_KIN_DIST;
     boolean canHunt = a.n(GeneType.DIET) > 0.3;
+    boolean seekingMate = w.sexualReproduction() && a.canReproduce();
 
     for (Animal b : seen) {
       // Same species is never a threat or prey — a hard biological boundary
       // against cannibalism, on top of the fuzzy genetic kin-distance check
       // below (which only protects close relatives within one species).
-      if (b.getSpeciesId() == a.getSpeciesId()) continue;
+      if (b.getSpeciesId() == a.getSpeciesId()) {
+        // A ready same-species partner is a mate candidate; choose by ORNAMENT
+        // (sexual selection favours the showiest available suitor).
+        if (seekingMate && b != a && b.canReproduce()) {
+          double orn = b.n(GeneType.ORNAMENT);
+          if (orn > bestMateOrnament) {
+            bestMateOrnament = orn;
+            mate = b;
+          }
+        }
+        continue;
+      }
       boolean kin = ag.distance(b.getGenome()) < kinRange;
       if (kin) continue;
       int d = cheb(w, a, b);
@@ -107,9 +120,11 @@ final class Behavior {
       acted = graze(w, a);
     }
 
-    // 5. Reproduce.
-    if (!acted && a.canReproduce()) {
-      acted = reproduce(w, a, newborns);
+    // 5. Reproduce (once the refractory period has elapsed). Under sexual
+    // reproduction a ready mate must be at hand; otherwise it's asexual.
+    if (!acted && a.canReproduce()
+        && w.currentTick() - a.getLastBirthTick() >= a.reproductionCooldown()) {
+      acted = reproduce(w, a, newborns, mate);
     }
 
     // 6. Seek a better-matching biome when idle somewhere climatically poor
@@ -162,6 +177,11 @@ final class Behavior {
     w.recordFight(a.getX(), a.getY(), b.getX(), b.getY());
     double damage = a.n(GeneType.STRENGTH) * Balance.DMG_K * (a.getMass() / b.getMass())
         - b.n(GeneType.DURABILITY) * Balance.ARMOR_K;
+    // Safety in numbers: a social prey animal surrounded by its own kind is
+    // harder to single out and kill (predator dilution + more eyes watching).
+    double herd = Math.min(1.0, (double) w.sameSpeciesNeighbors(b) / Balance.SOCIAL_HERD_FULL);
+    double dilution = Balance.SOCIAL_DILUTION * b.n(GeneType.SOCIABILITY) * herd;
+    damage *= (1.0 - dilution);
     b.damage(Math.max(0, damage));
     if (b.getHp() <= 0) {
       // Eaten by the predator, so no carrion is left behind.
@@ -174,14 +194,21 @@ final class Behavior {
     }
   }
 
-  private boolean reproduce(World w, Animal a, List<Animal> newborns) {
+  private boolean reproduce(World w, Animal a, List<Animal> newborns, Animal mate) {
+    // Sexual reproduction needs a partner; without one, the animal simply
+    // waits — a realistic Allee effect that makes sparse populations struggle.
+    if (w.sexualReproduction() && mate == null) return false;
     int[] spot = freeAdjacent(w, a);
     if (spot == null) return false;
-    Genome childGenome = a.getGenome().mutatedCopy(w.rng().get());
+    Genome childGenome = (mate != null)
+        ? a.getGenome().crossover(mate.getGenome(), w.rng().get())
+        : a.getGenome().mutatedCopy(w.rng().get());
     Animal child = new Animal(childGenome, w.nextId());
     child.setBirthTick(w.currentTick());
-    double invest = a.getEnergy() * Balance.OFFSPRING_ENERGY_FRACTION;
+    // PARENTAL_CARE trades quantity for quality: more energy into each child.
+    double invest = a.getEnergy() * a.offspringInvestment();
     a.setEnergy(a.getEnergy() - invest);
+    a.setLastBirthTick(w.currentTick());
     child.setEnergy(Math.min(invest, child.maxEnergy()));
     child.setSpeciesId(w.species().classify(childGenome, w.currentTick(), a.getSpeciesId(), w.rng().get()));
     w.placeNewborn(child, spot[0], spot[1]);
@@ -200,8 +227,14 @@ final class Behavior {
 
   private void upkeep(World w, Animal a) {
     Tile t = w.tileAt(a.getX(), a.getY());
-    // Climate stress is the tile's biome cost plus any seasonal winter cold.
-    a.addEnergy(-a.metabolism(t.getBiome().climateStress() + w.seasonalColdStress()));
+    // Climate upkeep is temperature-based (tile temp shifted by the season),
+    // so INSULATION helps in the cold and hurts in the heat.
+    double effTemp = Math.max(0.0, Math.min(1.0, t.getTemperature() + w.seasonalTempShift()));
+    a.addEnergy(-a.metabolism(a.thermalStress(effTemp)));
+    // Illness is a metabolic tax: fighting an infection burns extra energy.
+    if (a.isInfected()) {
+      a.addEnergy(-a.metabolism() * Balance.DISEASE_ENERGY_DRAIN);
+    }
     a.grow();
     a.regen();
     if (a.getEnergy() <= 0) {

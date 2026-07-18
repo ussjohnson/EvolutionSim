@@ -21,7 +21,10 @@ public class Animal {
   private double hp;
   private int speciesId = -1;
   private int birthTick = 0;
+  private int lastBirthTick = Integer.MIN_VALUE / 2; // for the reproductive refractory period
   private boolean alive = true;
+  private boolean infected = false;
+  private int infectionElapsed = 0;
 
   public Animal(Genome genome, int id) {
     this.genome = genome;
@@ -71,7 +74,11 @@ public class Animal {
     }
     double economyOfScale = 1.0 - Balance.SIZE_METABOLIC_DISCOUNT * n(GeneType.SIZE);
     double climateProtection = 1.0 - Balance.SIZE_CLIMATE_PROTECTION * n(GeneType.SIZE);
-    return Balance.BASE_META * (1.0 + climateStress * climateProtection) + sum * economyOfScale;
+    // Climate is an absolute upkeep surcharge (not just a BASE_META tweak) so
+    // it's large enough for INSULATION's cold-relief to actually pay for
+    // itself; SIZE still discounts it (Bergmann's rule).
+    return Balance.BASE_META + sum * economyOfScale
+        + climateStress * Balance.THERMAL_COST * climateProtection;
   }
 
   /** Energy spent per tile of movement. */
@@ -152,11 +159,45 @@ public class Animal {
    */
   public double effectiveStealth(double tileTemperature, double tileMoisture) {
     double base = n(GeneType.STEALTH) * (1.0 - 0.5 * n(GeneType.SIZE));
+    // A sexual-display ornament is conspicuous: it undercuts stealth, the
+    // survival cost that balances its mating benefit.
+    base *= (1.0 - Balance.ORNAMENT_STEALTH_PENALTY * n(GeneType.ORNAMENT));
     double dt = n(GeneType.CAMO_TEMP) - tileTemperature;
     double dm = n(GeneType.CAMO_MOISTURE) - tileMoisture;
     double mismatch = Math.sqrt(dt * dt + dm * dm); // 0 (perfect match) .. ~1.41 (opposite corners)
     double camoFactor = Math.max(0.0, 1.0 - Balance.CAMO_MISMATCH_K * mismatch);
     return base * camoFactor;
+  }
+
+  /**
+   * Temperature-based climate upkeep at the given effective tile temperature
+   * (the tile's own temperature plus any seasonal shift), in [0,1]. Below
+   * {@link Balance#COLD_COMFORT} the animal pays cold stress that
+   * {@link GeneType#INSULATION} largely relieves; above
+   * {@link Balance#HEAT_COMFORT} it pays heat stress that insulation instead
+   * *worsens*. This is the extra climate term fed to {@link #metabolism(double)},
+   * and it's why fur wins in the cold and loses in the heat.
+   */
+  public double thermalStress(double effectiveTemp) {
+    double insulation = n(GeneType.INSULATION);
+    double cold = Math.max(0.0, Balance.COLD_COMFORT - effectiveTemp);
+    double heat = Math.max(0.0, effectiveTemp - Balance.HEAT_COMFORT);
+    double coldStress = Balance.COLD_STRESS_K * cold * (1.0 - insulation * Balance.INSULATION_COLD_RELIEF);
+    double heatStress = Balance.HEAT_STRESS_K
+        * (heat + insulation * Balance.INSULATION_HEAT_PENALTY * effectiveTemp);
+    return coldStress + heatStress;
+  }
+
+  /** Ticks that must pass between births — short for r-strategists, long for high PARENTAL_CARE (K). */
+  public int reproductionCooldown() {
+    return Balance.REPRO_COOLDOWN_BASE
+        + (int) Math.round(n(GeneType.PARENTAL_CARE) * Balance.REPRO_COOLDOWN_CARE);
+  }
+
+  /** Fraction of parent energy invested per offspring, scaled up by PARENTAL_CARE (quality over quantity). */
+  public double offspringInvestment() {
+    return Balance.OFFSPRING_ENERGY_FRACTION
+        * (1.0 + n(GeneType.PARENTAL_CARE) * Balance.PARENTAL_CARE_INVEST);
   }
 
   // --- State mutation ---
@@ -201,6 +242,14 @@ public class Animal {
     alive = false;
   }
 
+  // --- Disease state (susceptible-infected-recovered contagion) ---
+
+  public boolean isInfected() { return infected; }
+  public int infectionElapsed() { return infectionElapsed; }
+  public void infect() { if (!infected) { infected = true; infectionElapsed = 0; } }
+  public void ageInfection() { if (infected) infectionElapsed++; }
+  public void clearInfection() { infected = false; infectionElapsed = 0; }
+
   // --- Getters / setters ---
 
   public Genome getGenome() { return genome; }
@@ -216,6 +265,8 @@ public class Animal {
   public void setSpeciesId(int speciesId) { this.speciesId = speciesId; }
   public int getBirthTick() { return birthTick; }
   public void setBirthTick(int birthTick) { this.birthTick = birthTick; }
+  public int getLastBirthTick() { return lastBirthTick; }
+  public void setLastBirthTick(int tick) { this.lastBirthTick = tick; }
   public boolean isAlive() { return alive; }
 
   /** True once reserves are low enough that the animal wants to feed. */

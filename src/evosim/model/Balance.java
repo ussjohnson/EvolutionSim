@@ -59,8 +59,8 @@ public final class Balance {
   // --- Feeding ---
   public static double APPETITE = 0.35;           // base foliage grazed per tick
   public static double APPETITE_MASS_SCALE = 0.25; // extra graze capacity per unit body mass
-  public static double PLANT_ENERGY = 3.0;        // energy per unit foliage (× herbivory)
-  public static double MEAT_ENERGY = 9.0;         // energy per unit prey mass (× carnivory)
+  public static double PLANT_ENERGY = 3.6;        // energy per unit foliage (× herbivory)
+  public static double MEAT_ENERGY = 10.0;        // energy per unit prey mass (× carnivory)
   public static double PREY_DISTANCE_WEIGHT = 0.15; // how much distance offsets mass-ratio in prey preference
   public static double MAX_PREY_MASS_RATIO = 3.0; // prey this much bigger than the predator isn't worth attempting
 
@@ -174,7 +174,9 @@ public final class Balance {
   public static double AGING_K = 0.0046;
   // "Typical" metabolism (empirically, the average across random genomes),
   // used so an animal at exactly this rate has aging-pace multiplier 1.0.
-  public static double AGING_REFERENCE_METABOLISM = 0.34;
+  // Recalibrated to ~0.41 after the gene set grew (INSULATION/IMMUNITY/ORNAMENT
+  // add metabolic weight); see the Measure harness.
+  public static double AGING_REFERENCE_METABOLISM = 0.41;
   // Fraction by which max SIZE slows the aging clock — the same Kleiber's-law
   // economy of scale that already discounts SIZE's raw metabolic upkeep, so
   // a long life is bought with the SIZE tradeoffs that already exist
@@ -243,7 +245,7 @@ public final class Balance {
   public static double CARRION_DECAY = 0.88;      // fraction of a carcass remaining after one tick
   public static double CARRION_TO_FERTILITY = 0.015; // fertility returned to the tile per carrion unit lost to decay
   public static double SCAVENGE_MIN_DIET = 0.2;   // minimum DIET to be able to scavenge carrion
-  public static double CARRION_ENERGY = 7.0;      // energy per carrion unit eaten (× carnivory)
+  public static double CARRION_ENERGY = 8.0;      // energy per carrion unit eaten (× carnivory)
 
   // --- Disasters (user-triggered; never fire on the deterministic test path) ---
   // A wildfire started with the interactive Fire tool/event spreads to
@@ -253,6 +255,69 @@ public final class Balance {
   public static double FIRE_SPREAD_CHANCE = 0.33;
   public static double FIRE_MIN_FOLIAGE = 0.12;
   public static int FIRE_DURATION = 3;
+
+  // --- Thermoregulation ---
+  // Climate stress is modelled from the tile's actual temperature (plus the
+  // seasonal shift) against a comfortable band, rather than a flat per-biome
+  // number: below COLD_COMFORT an animal pays cold stress, above HEAT_COMFORT
+  // it pays heat stress. INSULATION removes most cold stress but *adds* heat
+  // stress (fur is deadly in the desert), so cold biomes/winters favour
+  // insulated bodies and hot biomes/summers favour bare ones — real spatial
+  // niche differentiation that keeps one body plan from winning everywhere.
+  public static double COLD_COMFORT = 0.42;       // effective temp below this → cold stress
+  public static double HEAT_COMFORT = 0.72;       // effective temp above this → heat stress
+  public static double COLD_STRESS_K = 1.1;       // upkeep multiplier on cold deficit
+  public static double HEAT_STRESS_K = 1.1;       // upkeep multiplier on heat excess
+  public static double INSULATION_COLD_RELIEF = 0.85; // fraction of cold stress insulation removes
+  public static double INSULATION_HEAT_PENALTY = 0.7; // heat stress insulation adds, scaled by temp
+  public static double SEASON_TEMP_AMPLITUDE = 0.28;  // ± shift to effective tile temp across the year
+  public static double THERMAL_COST = 0.5;            // energy/tick per unit of thermal stress (before SIZE discount)
+
+  // --- Sociability / herding ---
+  // Being among same-species neighbours dilutes predation (a predator can only
+  // take one of many, and more eyes spot it sooner): an attack on a highly
+  // social animal with company lands for less. The offsetting costs — faster
+  // disease spread in crowds and quicker local forage depletion — are charged
+  // by the disease system and ordinary grazing, so grouping is a real tradeoff.
+  public static double SOCIAL_DILUTION = 0.55;    // max predation-damage reduction in a full herd
+  public static int SOCIAL_HERD_FULL = 4;         // same-species neighbours for the full dilution effect
+
+  // --- Sexual selection ---
+  public static double ORNAMENT_STEALTH_PENALTY = 0.6; // conspicuous display cuts effective stealth
+
+  // --- Life history (r/K) ---
+  // PARENTAL_CARE trades offspring quantity for quality: high care invests more
+  // parental energy per child (a bigger head start) but imposes a long
+  // refractory period between births; low care reproduces fast and cheap. The
+  // base offspring investment (OFFSPRING_ENERGY_FRACTION) is scaled up by care.
+  public static double PARENTAL_CARE_INVEST = 0.6; // extra investment fraction at max care
+  public static int REPRO_COOLDOWN_BASE = 2;       // min ticks between births (r-strategist)
+  public static int REPRO_COOLDOWN_CARE = 55;      // additional cooldown ticks at max care (K-strategist)
+
+  // --- Sexual reproduction ---
+  // When enabled, reproduction needs a ready same-species mate within
+  // perception; the mate is chosen by ORNAMENT (sexual selection) and the child
+  // is a per-gene recombination of both parents plus mutation. Sparse
+  // populations struggle to find mates — a realistic Allee effect.
+  public static boolean SEXUAL_DEFAULT = true;
+
+  // --- Disease / epidemics ---
+  // A susceptible-infected-recovered contagion. Outbreaks emerge more readily
+  // in crowds and, crucially, in proportion to a lineage's share of the whole
+  // population: the more an ecosystem is dominated by one abundant species, the
+  // harder epidemics hit it (density- and frequency-dependent transmission —
+  // the mechanism by which pathogens keep any single lineage from taking over,
+  // maintaining diversity). IMMUNITY lowers infection odds and virulence and
+  // speeds recovery. Off on the headless/dev path; on by default for GUI runs.
+  public static double DISEASE_EMERGENCE = 0.00004; // base per-animal spontaneous outbreak chance
+  public static double DISEASE_CROWD_FACTOR = 8.0;  // emergence scaling with local same-species crowding
+  public static double DISEASE_DOMINANCE_FACTOR = 6.0; // emergence scaling with the lineage's population share
+  public static double DISEASE_TRANSMISSION = 0.22; // base chance an infected neighbour infects a susceptible
+  public static double DISEASE_VIRULENCE = 0.02;    // base per-tick mortality while infected
+  public static double DISEASE_ENERGY_DRAIN = 0.4;  // fraction of metabolism added as upkeep while sick
+  public static double DISEASE_RECOVERY = 0.04;     // base per-tick recovery chance
+  public static int DISEASE_MIN_DURATION = 12;      // ticks before recovery can begin
+  public static double DISEASE_IMMUNITY_RELIEF = 0.85; // how much IMMUNITY cuts infection/virulence
 
   // --- Sampling / reporting ---
   public static int SAMPLE_INTERVAL = 5;          // ticks between population samples

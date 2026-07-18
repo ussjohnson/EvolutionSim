@@ -62,11 +62,12 @@ public final class Snapshot {
     public final float hp;
     public final float maxHp;
     public final float stealth;       // effective stealth on the animal's current tile; drives map opacity
+    public final boolean infected;    // currently carrying a disease
     public final double[] genomeNorm; // GeneType order, for the inspector's full-genome view
 
     public Dot(int id, int x, int y, int rgb, float mass, float maxMass, int speciesId,
                int birthTick, float energy, float maxEnergy, float hp, float maxHp,
-               float stealth, double[] genomeNorm) {
+               float stealth, boolean infected, double[] genomeNorm) {
       this.id = id;
       this.x = x;
       this.y = y;
@@ -80,6 +81,7 @@ public final class Snapshot {
       this.hp = hp;
       this.maxHp = maxHp;
       this.stealth = stealth;
+      this.infected = infected;
       this.genomeNorm = genomeNorm;
     }
   }

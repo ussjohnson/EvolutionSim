@@ -33,7 +33,26 @@ public enum GeneType {
   // peaks when a tile's actual temperature/moisture matches these, and
   // fades with mismatch — camouflage is biome-specific, not universal.
   CAMO_TEMP    ( 0.0,  1.0, 0.1, 0.00),
-  CAMO_MOISTURE( 0.0,  1.0, 0.1, 0.00);
+  CAMO_MOISTURE( 0.0,  1.0, 0.1, 0.00),
+  // Thermoregulation (fur/blubber): relieves cold stress but adds heat stress,
+  // plus a flat upkeep cost — great in tundra/winter, a liability in desert/
+  // summer, so cold and hot regions favor genuinely different body plans.
+  INSULATION   ( 0.0,  1.0, 0.1, 0.06),
+  // Disease resistance: lowers infection chance, virulence, and speeds
+  // recovery — but a strong immune system is metabolically expensive.
+  IMMUNITY     ( 0.0,  1.0, 0.1, 0.06),
+  // Herding: high sociability dilutes predation risk among same-species
+  // neighbours (safety in numbers) but crowds accelerate disease and deplete
+  // shared forage faster — a real grouping tradeoff, no direct upkeep cost.
+  SOCIABILITY  ( 0.0,  1.0, 0.1, 0.00),
+  // Life-history strategy (r vs K): high care means fewer, better-provisioned
+  // offspring born further apart; low care means many cheap offspring in quick
+  // succession. Neither dominates — they win in different conditions.
+  PARENTAL_CARE( 0.0,  1.0, 0.1, 0.00),
+  // Sexual display (a peacock's tail): attracts mates under sexual
+  // reproduction but is metabolically costly and conspicuous (cuts stealth),
+  // the raw material for Fisherian runaway selection.
+  ORNAMENT     ( 0.0,  1.0, 0.1, 0.05);
 
   public static final GeneType[] ALL = values();
   public static final int COUNT = ALL.length;

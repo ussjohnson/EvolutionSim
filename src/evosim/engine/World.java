@@ -52,6 +52,10 @@ public final class World {
   // (headless/dev path); enabled per-run by fromSettings.
   private boolean seasonsEnabled = false;
   private int seasonLength = Balance.SEASON_LENGTH;
+  // Optional realism systems, off on the headless/dev path (so the seeded
+  // SmokeTest survival band is unaffected), on by default for GUI runs.
+  private boolean sexualReproduction = false;
+  private boolean diseaseEnabled = false;
 
   // Per-sample flow counters (reset by StatsCollector each sample).
   private int birthsSinceSample = 0;
@@ -135,6 +139,8 @@ public final class World {
     World w = new World(s.width, s.height, s.seed, s.baseFertility, s.wraparound);
     w.seasonsEnabled = s.seasonsEnabled;
     w.seasonLength = Math.max(1, s.seasonLength);
+    w.sexualReproduction = s.sexualReproduction;
+    w.diseaseEnabled = s.diseaseEnabled;
     w.seedPopulation(s.population, s.startMin, s.startMax, s.founderSpeciesCount);
     w.stats.sample(w);
     return w;
@@ -212,6 +218,8 @@ public final class World {
     }
     animals.addAll(newborns);
 
+    spreadDisease(order);
+
     double growth = seasonalGrowthFactor();
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
@@ -262,10 +270,17 @@ public final class World {
     return Math.max(0.15, 1.0 + Balance.SEASON_GROWTH_SWING * seasonalSwing());
   }
 
-  /** Extra climate-stress fraction every animal pays in the cold half of the year (0 in summer). */
-  public double seasonalColdStress() {
-    return Balance.SEASON_COLD_STRESS * Math.max(0.0, -seasonalSwing());
+  /**
+   * Signed shift applied to every tile's effective temperature by the season:
+   * warmer in summer, colder in winter (see {@link Animal#thermalStress}). Zero
+   * when seasons are off.
+   */
+  public double seasonalTempShift() {
+    return Balance.SEASON_TEMP_AMPLITUDE * seasonalSwing();
   }
+
+  public boolean sexualReproduction() { return sexualReproduction; }
+  public boolean diseaseEnabled() { return diseaseEnabled; }
 
   /** Human-readable season for the current tick, or "—" when seasons are off. */
   public String seasonName() {
@@ -323,6 +338,86 @@ public final class World {
     }
     for (int[] ig : ignitions) next.putIfAbsent(ig[0], ig[1]);
     burning = next;
+  }
+
+  // --- Disease (susceptible-infected-recovered contagion) ---
+
+  /**
+   * Advance the epidemic model one tick over the (id-ordered) population:
+   * infected animals progress toward recovery or death and shed the pathogen to
+   * susceptible neighbours, while new outbreaks emerge spontaneously at a rate
+   * that climbs with local crowding and — crucially — with the infected
+   * lineage's share of the whole population. That frequency dependence is the
+   * ecological brake on monoculture: the more one species dominates, the more
+   * savagely epidemics cull it, holding the door open for rarer lineages.
+   */
+  private void spreadDisease(List<Animal> order) {
+    if (!diseaseEnabled || animals.isEmpty()) return;
+    Random r = rng.get();
+    int pop = animals.size();
+    List<Animal> newlyInfected = new ArrayList<>();
+    for (Animal a : order) {
+      if (!a.isAlive()) continue;
+      double immunity = a.n(GeneType.IMMUNITY);
+      double relief = 1.0 - immunity * Balance.DISEASE_IMMUNITY_RELIEF;
+      if (a.isInfected()) {
+        a.ageInfection();
+        if (a.infectionElapsed() >= Balance.DISEASE_MIN_DURATION
+            && r.nextDouble() < Balance.DISEASE_RECOVERY * (1.0 + 2.0 * immunity)) {
+          a.clearInfection();
+          continue;
+        }
+        if (r.nextDouble() < Balance.DISEASE_VIRULENCE * relief) {
+          animalDied(a, Species.DeathCause.DISEASE, true);
+          continue;
+        }
+        // Shed to susceptible neighbours (they turn infectious next tick).
+        for (Animal b : neighbors(a)) {
+          if (b.isInfected() || newlyInfected.contains(b)) continue;
+          double bRelief = 1.0 - b.n(GeneType.IMMUNITY) * Balance.DISEASE_IMMUNITY_RELIEF;
+          if (r.nextDouble() < Balance.DISEASE_TRANSMISSION * bRelief) {
+            newlyInfected.add(b);
+          }
+        }
+      } else if (!newlyInfected.contains(a)) {
+        // Spontaneous outbreak, density- and dominance-dependent.
+        Species sp = species.byId(a.getSpeciesId());
+        double share = (sp != null && pop > 0) ? (double) sp.members() / pop : 0.0;
+        int crowd = sameSpeciesNeighbors(a);
+        double p = Balance.DISEASE_EMERGENCE
+            * (1.0 + Balance.DISEASE_CROWD_FACTOR * crowd / 8.0)
+            * (1.0 + Balance.DISEASE_DOMINANCE_FACTOR * share)
+            * relief;
+        if (r.nextDouble() < p) a.infect();
+      }
+    }
+    for (Animal b : newlyInfected) {
+      if (b.isAlive()) b.infect();
+    }
+  }
+
+  /** Living animals on the 8 tiles around {@code a} (wrapping if enabled). */
+  private List<Animal> neighbors(Animal a) {
+    List<Animal> out = new ArrayList<>(8);
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        if (dx == 0 && dy == 0) continue;
+        int nx = a.getX() + dx, ny = a.getY() + dy;
+        if (!canReach(nx, ny)) continue;
+        Animal b = tiles[wrapY(ny)][wrapX(nx)].getResident();
+        if (b != null && b.isAlive()) out.add(b);
+      }
+    }
+    return out;
+  }
+
+  /** Count of same-species living neighbours around {@code a} (herd size proxy for sociability/disease). */
+  public int sameSpeciesNeighbors(Animal a) {
+    int c = 0;
+    for (Animal b : neighbors(a)) {
+      if (b.getSpeciesId() == a.getSpeciesId()) c++;
+    }
+    return c;
   }
 
   // --- Death bookkeeping (centralized so carrion + counters stay consistent) ---
@@ -489,7 +584,7 @@ public final class World {
       dots.add(new Snapshot.Dot(a.getId(), a.getX(), a.getY(), rgb,
           (float) a.getMass(), (float) a.maxMass(), a.getSpeciesId(), a.getBirthTick(),
           (float) a.getEnergy(), (float) a.maxEnergy(), (float) a.getHp(), (float) a.maxHp(),
-          stealth, a.getGenome().normVector()));
+          stealth, a.isInfected(), a.getGenome().normVector()));
     }
     java.util.List<Snapshot.SpeciesCount> sc = new ArrayList<>();
     for (evosim.model.Species s : species.all()) {

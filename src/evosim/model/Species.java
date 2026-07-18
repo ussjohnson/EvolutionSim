@@ -11,8 +11,8 @@ import java.util.List;
  * and a sampled population history for the end-of-run charts.
  */
 public final class Species {
-  /** What killed a member: starvation, a predator's kill, old age, or a disaster (fire/meteor/smite). */
-  public enum DeathCause { STARVATION, PREDATION, OLD_AGE, DISASTER }
+  /** What killed a member: starvation, predation, old age, disease, or a disaster (fire/meteor/smite). */
+  public enum DeathCause { STARVATION, PREDATION, OLD_AGE, DISASTER, DISEASE }
 
   private final int id;
   private final String name;
@@ -33,6 +33,7 @@ public final class Species {
   private int predationDeaths = 0;
   private int oldAgeDeaths = 0;
   private int disasterDeaths = 0;
+  private int diseaseDeaths = 0;
   private long totalLifetimeTicks = 0; // accumulated age-at-death, for the average
 
   // Sampled population over time (parallel to SpeciesRegistry sample ticks).
@@ -79,6 +80,7 @@ public final class Species {
       case PREDATION -> predationDeaths++;
       case OLD_AGE -> oldAgeDeaths++;
       case DISASTER -> disasterDeaths++;
+      case DISEASE -> diseaseDeaths++;
     }
     if (members <= 0) {
       members = 0;
@@ -108,14 +110,15 @@ public final class Species {
     return Math.sqrt(sum / centroid.length);
   }
 
-  /** "starvation", "predation", "old age", "disaster", or "none yet" if nobody has died. */
+  /** The most common cause among this species' deaths, or "none yet" if nobody has died. */
   public String primaryCauseOfDeath() {
     if (totalDeaths == 0) return "none yet";
     int max = Math.max(Math.max(starvationDeaths, predationDeaths),
-        Math.max(oldAgeDeaths, disasterDeaths));
+        Math.max(Math.max(oldAgeDeaths, disasterDeaths), diseaseDeaths));
     if (starvationDeaths == max) return "starvation";
     if (predationDeaths == max) return "predation";
     if (oldAgeDeaths == max) return "old age";
+    if (diseaseDeaths == max) return "disease";
     return "disaster";
   }
 
@@ -142,6 +145,7 @@ public final class Species {
   public int predationDeaths() { return predationDeaths; }
   public int oldAgeDeaths() { return oldAgeDeaths; }
   public int disasterDeaths() { return disasterDeaths; }
+  public int diseaseDeaths() { return diseaseDeaths; }
   public List<Integer> populationHistory() { return populationHistory; }
 
   public int lifespan(int currentTick) {

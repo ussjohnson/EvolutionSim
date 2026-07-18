@@ -28,6 +28,8 @@ public class Main {
     int pop = 150;
     boolean seasons = false;
     boolean wraparound = false;
+    boolean sexual = false;
+    boolean disease = false;
     String reportPath = null;
 
     for (int i = 0; i < args.length; i++) {
@@ -40,6 +42,8 @@ public class Main {
         case "--pop":      pop = Integer.parseInt(args[++i]); break;
         case "--seasons":  seasons = true; break;
         case "--wraparound": wraparound = true; break;
+        case "--sexual":   sexual = true; break;
+        case "--disease":  disease = true; break;
         case "--report":   reportPath = args[++i]; headless = true; break;
         default:
           System.err.println("Unknown argument: " + args[i]);
@@ -48,16 +52,17 @@ public class Main {
     }
 
     if (headless) {
-      runHeadless(seed, ticks, width, height, pop, seasons, wraparound, reportPath);
+      runHeadless(seed, ticks, width, height, pop, seasons, wraparound, sexual, disease, reportPath);
     } else {
       SwingUtilities.invokeLater(() -> new MainWindow().setVisible(true));
     }
   }
 
   private static void runHeadless(long seed, int ticks, int width, int height, int pop,
-                                  boolean seasons, boolean wraparound, String reportPath) {
-    System.out.printf("Seed=%d  map=%dx%d  startPop=%d  ticks=%d  seasons=%b  wraparound=%b%n",
-        seed, width, height, pop, ticks, seasons, wraparound);
+                                  boolean seasons, boolean wraparound, boolean sexual,
+                                  boolean disease, String reportPath) {
+    System.out.printf("Seed=%d  map=%dx%d  startPop=%d  ticks=%d  seasons=%b  wraparound=%b  sexual=%b  disease=%b%n",
+        seed, width, height, pop, ticks, seasons, wraparound, sexual, disease);
     evosim.config.SimSettings s = new evosim.config.SimSettings();
     s.seed = seed;
     s.width = width;
@@ -66,6 +71,8 @@ public class Main {
     s.baseFertility = 0.2;
     s.seasonsEnabled = seasons;
     s.wraparound = wraparound;
+    s.sexualReproduction = sexual;
+    s.diseaseEnabled = disease;
     World w = World.fromSettings(s);
     System.out.printf("tick=%-5d pop=%-5d species=%d%n", 0, w.population(), w.species().extantCount());
     for (int t = 1; t <= ticks; t++) {

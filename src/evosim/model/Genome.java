@@ -61,6 +61,23 @@ public final class Genome {
     return new Genome(c);
   }
 
+  /**
+   * A sexually-recombined, mutated child of this genome and {@code other}:
+   * uniform crossover (each gene inherited at random from one parent or the
+   * other) followed by the usual mutation. Both parents are untouched. This is
+   * what makes sexual reproduction shuffle existing variation into new
+   * combinations each generation instead of merely copying one lineage.
+   */
+  public Genome crossover(Genome other, Random rng) {
+    Gene[] c = new Gene[genes.length];
+    for (int i = 0; i < genes.length; i++) {
+      Gene src = rng.nextBoolean() ? genes[i] : other.genes[i];
+      c[i] = src.copy();
+      c[i].mutate(rng);
+    }
+    return new Genome(c);
+  }
+
   /** The normalized [0,1] value of every gene, in GeneType order. */
   public double[] normVector() {
     double[] v = new double[genes.length];
