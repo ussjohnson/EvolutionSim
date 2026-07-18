@@ -217,6 +217,43 @@ public final class Balance {
   // lineage later spreads into open tundra.
   public static double CAMO_MISMATCH_K = 0.7;
 
+  // --- Seasons / dynamic climate ---
+  // A run can carry a global seasonal cycle (see World#seasonalPhase): a sine
+  // wave over SEASON_LENGTH ticks that swings foliage regrowth up in summer
+  // and down in winter (SEASON_GROWTH_SWING) and layers extra climate-stress
+  // upkeep on every animal at the coldest point of the year
+  // (SEASON_COLD_STRESS). Off by default on the headless/dev path (so the
+  // deterministic SmokeTest survival band is unaffected); on by default for
+  // GUI runs via SimSettings. Deterministic — a pure function of the tick.
+  public static int SEASON_LENGTH = 480;          // ticks in one full year
+  public static double SEASON_GROWTH_SWING = 0.55; // ± fraction on foliage regrowth across the year
+  public static double SEASON_COLD_STRESS = 0.45;  // extra climate-stress fraction at deepest winter
+
+  // --- Carrion & scavenging ---
+  // When an animal dies of starvation, old age, or a disaster (but not
+  // predation — the predator already ate it), its body is left as carrion on
+  // its tile: a pool of meat energy that decays each tick (CARRION_DECAY),
+  // returning a little of itself to the soil as fertility (CARRION_TO_FERTILITY,
+  // nutrient cycling) while it lasts. Any animal carnivorous enough to eat meat
+  // (DIET >= SCAVENGE_MIN_DIET) standing on a carrion tile can scavenge it — a
+  // safe, fightless food source that recycles biomass and gives omnivores a
+  // real secondary strategy. CARRION_ENERGY is the energy yield per carrion
+  // unit eaten (scaled by the scavenger's carnivory, like fresh meat).
+  public static double CARRION_FROM_MASS = 0.7;   // carrion units left per unit body mass at death
+  public static double CARRION_DECAY = 0.88;      // fraction of a carcass remaining after one tick
+  public static double CARRION_TO_FERTILITY = 0.015; // fertility returned to the tile per carrion unit lost to decay
+  public static double SCAVENGE_MIN_DIET = 0.2;   // minimum DIET to be able to scavenge carrion
+  public static double CARRION_ENERGY = 7.0;      // energy per carrion unit eaten (× carnivory)
+
+  // --- Disasters (user-triggered; never fire on the deterministic test path) ---
+  // A wildfire started with the interactive Fire tool/event spreads to
+  // adjacent foliage-bearing tiles each tick (FIRE_SPREAD_CHANCE) as long as
+  // the tile has at least FIRE_MIN_FOLIAGE to burn, lasts FIRE_DURATION ticks
+  // per tile, strips foliage, and kills whatever stands in it.
+  public static double FIRE_SPREAD_CHANCE = 0.33;
+  public static double FIRE_MIN_FOLIAGE = 0.12;
+  public static int FIRE_DURATION = 3;
+
   // --- Sampling / reporting ---
   public static int SAMPLE_INTERVAL = 5;          // ticks between population samples
 }

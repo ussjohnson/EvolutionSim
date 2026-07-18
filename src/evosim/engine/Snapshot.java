@@ -15,21 +15,32 @@ public final class Snapshot {
   public final int population;
   public final float[] foliage;             // length width*height, row-major
   public final byte[] biome;                // length width*height, row-major; BiomeType ordinal
+  public final float[] carrion;             // length width*height, row-major; carcass energy per tile
+  public final boolean[] fire;              // length width*height, row-major; true where a tile is burning
   public final List<Dot> dots;              // one per living animal
   public final List<SpeciesCount> species;  // extant species, for the sidebar
   public final List<Fight> fights;          // this tick's attacks, for the map's fight indicator
+  public final boolean seasonsEnabled;
+  public final String seasonName;           // "Spring".."Winter", or "—" when seasons are off
+  public final double seasonPhase;          // [0,1) position within the year
 
   public Snapshot(int width, int height, int tick, int population, float[] foliage, byte[] biome,
-                  List<Dot> dots, List<SpeciesCount> species, List<Fight> fights) {
+                  float[] carrion, boolean[] fire, List<Dot> dots, List<SpeciesCount> species,
+                  List<Fight> fights, boolean seasonsEnabled, String seasonName, double seasonPhase) {
     this.width = width;
     this.height = height;
     this.tick = tick;
     this.population = population;
     this.foliage = foliage;
     this.biome = biome;
+    this.carrion = carrion;
+    this.fire = fire;
     this.dots = dots;
     this.species = species;
     this.fights = fights;
+    this.seasonsEnabled = seasonsEnabled;
+    this.seasonName = seasonName;
+    this.seasonPhase = seasonPhase;
   }
 
   /**

@@ -26,6 +26,8 @@ public class Main {
     int width = 40;
     int height = 30;
     int pop = 150;
+    boolean seasons = false;
+    boolean wraparound = false;
     String reportPath = null;
 
     for (int i = 0; i < args.length; i++) {
@@ -36,6 +38,8 @@ public class Main {
         case "--width":    width = Integer.parseInt(args[++i]); break;
         case "--height":   height = Integer.parseInt(args[++i]); break;
         case "--pop":      pop = Integer.parseInt(args[++i]); break;
+        case "--seasons":  seasons = true; break;
+        case "--wraparound": wraparound = true; break;
         case "--report":   reportPath = args[++i]; headless = true; break;
         default:
           System.err.println("Unknown argument: " + args[i]);
@@ -44,15 +48,25 @@ public class Main {
     }
 
     if (headless) {
-      runHeadless(seed, ticks, width, height, pop, reportPath);
+      runHeadless(seed, ticks, width, height, pop, seasons, wraparound, reportPath);
     } else {
       SwingUtilities.invokeLater(() -> new MainWindow().setVisible(true));
     }
   }
 
-  private static void runHeadless(long seed, int ticks, int width, int height, int pop, String reportPath) {
-    System.out.printf("Seed=%d  map=%dx%d  startPop=%d  ticks=%d%n", seed, width, height, pop, ticks);
-    World w = World.create(width, height, pop, seed, 0.2);
+  private static void runHeadless(long seed, int ticks, int width, int height, int pop,
+                                  boolean seasons, boolean wraparound, String reportPath) {
+    System.out.printf("Seed=%d  map=%dx%d  startPop=%d  ticks=%d  seasons=%b  wraparound=%b%n",
+        seed, width, height, pop, ticks, seasons, wraparound);
+    evosim.config.SimSettings s = new evosim.config.SimSettings();
+    s.seed = seed;
+    s.width = width;
+    s.height = height;
+    s.population = pop;
+    s.baseFertility = 0.2;
+    s.seasonsEnabled = seasons;
+    s.wraparound = wraparound;
+    World w = World.fromSettings(s);
     System.out.printf("tick=%-5d pop=%-5d species=%d%n", 0, w.population(), w.species().extantCount());
     for (int t = 1; t <= ticks; t++) {
       w.tick();

@@ -3,13 +3,18 @@ package evosim.engine;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.function.Consumer;
 
 import evosim.model.Animal;
 import evosim.model.Balance;
 import evosim.model.BiomeType;
 import evosim.model.GeneType;
 import evosim.model.Genome;
+import evosim.model.Species;
 import evosim.model.SpeciesRegistry;
 import evosim.model.Tile;
 
@@ -34,6 +39,23 @@ public final class World {
   private final Behavior behavior = new Behavior();
   private final StatsCollector stats = new StatsCollector();
   private final List<int[]> fights = new ArrayList<>(); // this tick's attacks: {ax, ay, tx, ty}
+
+  // Interactive user commands (god-tools) queued from the UI thread and drained
+  // on the engine thread at the start of each tick, so all model mutation still
+  // happens on one thread. Empty on the headless/deterministic path.
+  private final ConcurrentLinkedQueue<Consumer<World>> commands = new ConcurrentLinkedQueue<>();
+  // Actively burning tiles: tileIndex (y*width+x) -> remaining burn ticks. A
+  // TreeMap for ordered iteration. Only ever populated by user-triggered fire.
+  private Map<Integer, Integer> burning = new TreeMap<>();
+
+  // Seasons: a global yearly climate cycle (see #seasonalPhase). Off by default
+  // (headless/dev path); enabled per-run by fromSettings.
+  private boolean seasonsEnabled = false;
+  private int seasonLength = Balance.SEASON_LENGTH;
+
+  // Per-sample flow counters (reset by StatsCollector each sample).
+  private int birthsSinceSample = 0;
+  private int deathsSinceSample = 0;
 
   private int tick = 0;
   private int nextId = 0;
@@ -111,6 +133,8 @@ public final class World {
   public static World fromSettings(evosim.config.SimSettings s) {
     s.sanitize();
     World w = new World(s.width, s.height, s.seed, s.baseFertility, s.wraparound);
+    w.seasonsEnabled = s.seasonsEnabled;
+    w.seasonLength = Math.max(1, s.seasonLength);
     w.seedPopulation(s.population, s.startMin, s.startMax, s.founderSpeciesCount);
     w.stats.sample(w);
     return w;
@@ -170,6 +194,12 @@ public final class World {
   public void tick() {
     fights.clear();
 
+    // Apply any interactive user commands, then advance active wildfires —
+    // both before the animals act, so a freshly-triggered event takes effect
+    // this tick.
+    drainCommands();
+    spreadFire();
+
     // Deterministic base order (by id) then a seeded shuffle for turn fairness.
     List<Animal> order = new ArrayList<>(animals);
     order.sort((a, b) -> Integer.compare(a.getId(), b.getId()));
@@ -182,9 +212,10 @@ public final class World {
     }
     animals.addAll(newborns);
 
+    double growth = seasonalGrowthFactor();
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
-        tiles[y][x].recover(rng.get());
+        tiles[y][x].recover(rng.get(), growth);
       }
     }
 
@@ -193,6 +224,142 @@ public final class World {
     if (tick % Balance.SAMPLE_INTERVAL == 0) {
       stats.sample(this);
     }
+  }
+
+  // --- Interactive commands (god-tools) ---
+
+  /** Queue a mutation to run on the engine thread at the start of the next tick. */
+  public void enqueue(Consumer<World> command) {
+    commands.add(command);
+  }
+
+  private void drainCommands() {
+    Consumer<World> c;
+    while ((c = commands.poll()) != null) {
+      c.accept(this);
+    }
+  }
+
+  // --- Seasons ---
+
+  public boolean seasonsEnabled() { return seasonsEnabled; }
+  public int seasonLength() { return seasonLength; }
+
+  /** Position within the current year in [0,1): 0=spring start, .25=midsummer, .5=autumn, .75=midwinter. */
+  public double seasonalPhase() {
+    if (!seasonsEnabled) return 0.0;
+    return (double) (((tick % seasonLength) + seasonLength) % seasonLength) / seasonLength;
+  }
+
+  /** The seasonal swing s = sin(2πφ): +1 at midsummer, -1 at midwinter, 0 at the equinoxes. */
+  private double seasonalSwing() {
+    if (!seasonsEnabled) return 0.0;
+    return Math.sin(2.0 * Math.PI * seasonalPhase());
+  }
+
+  /** Multiplier on foliage regrowth: lush in summer, sparse in winter (never below 0.15). */
+  public double seasonalGrowthFactor() {
+    return Math.max(0.15, 1.0 + Balance.SEASON_GROWTH_SWING * seasonalSwing());
+  }
+
+  /** Extra climate-stress fraction every animal pays in the cold half of the year (0 in summer). */
+  public double seasonalColdStress() {
+    return Balance.SEASON_COLD_STRESS * Math.max(0.0, -seasonalSwing());
+  }
+
+  /** Human-readable season for the current tick, or "—" when seasons are off. */
+  public String seasonName() {
+    if (!seasonsEnabled) return "—";
+    double p = seasonalPhase();
+    if (p < 0.25) return "Spring";
+    if (p < 0.50) return "Summer";
+    if (p < 0.75) return "Autumn";
+    return "Winter";
+  }
+
+  // --- Wildfire ---
+
+  /** Ignite a wildfire at (x, y) if it has fuel; spreads on subsequent ticks. */
+  public void ignite(int x, int y) {
+    if (!inBounds(x, y)) return;
+    if (tiles[y][x].getFoliage() >= Balance.FIRE_MIN_FOLIAGE) {
+      burning.put(y * width + x, Balance.FIRE_DURATION);
+    }
+  }
+
+  public boolean isBurning(int x, int y) {
+    return burning.containsKey(y * width + x);
+  }
+
+  private void spreadFire() {
+    if (burning.isEmpty()) return;
+    Map<Integer, Integer> next = new TreeMap<>();
+    List<int[]> ignitions = new ArrayList<>();
+    Random r = rng.get();
+    for (Map.Entry<Integer, Integer> e : burning.entrySet()) {
+      int idx = e.getKey();
+      int x = idx % width, y = idx / width;
+      Tile t = tiles[y][x];
+      t.setFoliage(t.getFoliage() * 0.25); // fire strips most of the foliage
+      Animal resident = t.getResident();
+      if (resident != null && resident.isAlive()) {
+        animalDied(resident, Species.DeathCause.DISASTER, false); // burned, no carrion
+      }
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          int nx = x + dx, ny = y + dy;
+          if (!inBounds(nx, ny)) continue;
+          int nIdx = ny * width + nx;
+          if (burning.containsKey(nIdx)) continue;
+          if (tiles[ny][nx].getFoliage() >= Balance.FIRE_MIN_FOLIAGE
+              && r.nextDouble() < Balance.FIRE_SPREAD_CHANCE) {
+            ignitions.add(new int[] { nIdx, Balance.FIRE_DURATION });
+          }
+        }
+      }
+      int rem = e.getValue() - 1;
+      if (rem > 0) next.put(idx, rem);
+    }
+    for (int[] ig : ignitions) next.putIfAbsent(ig[0], ig[1]);
+    burning = next;
+  }
+
+  // --- Death bookkeeping (centralized so carrion + counters stay consistent) ---
+
+  /**
+   * Record an animal's death: remove it from the grid, tally it against its
+   * species, and (unless it was eaten by a predator) leave its body as carrion
+   * on its tile. Called for every death so births/deaths flow counters and the
+   * carrion economy stay consistent.
+   */
+  public void animalDied(Animal a, Species.DeathCause cause, boolean leaveCarrion) {
+    if (!a.isAlive()) return;
+    if (leaveCarrion) {
+      tiles[a.getY()][a.getX()].addCarrion(a.getMass() * Balance.CARRION_FROM_MASS);
+    }
+    a.kill();
+    removeFromGrid(a);
+    species.recordDeath(a.getSpeciesId(), tick, cause, a.getBirthTick());
+    deathsSinceSample++;
+  }
+
+  void recordBirth() {
+    birthsSinceSample++;
+  }
+
+  /** Births since the last stats sample, then reset — called by StatsCollector. */
+  public int takeBirthsSinceSample() {
+    int b = birthsSinceSample;
+    birthsSinceSample = 0;
+    return b;
+  }
+
+  /** Deaths since the last stats sample, then reset — called by StatsCollector. */
+  public int takeDeathsSinceSample() {
+    int d = deathsSinceSample;
+    deathsSinceSample = 0;
+    return d;
   }
 
   // --- Grid helpers ---
@@ -262,6 +429,33 @@ public final class World {
     tiles[y][x].setResident(child);
   }
 
+  /**
+   * Interactively spawn an animal with the given genome onto an empty tile at
+   * (x, y), classifying it into a species with no in-sim ancestor. Returns the
+   * new animal, or null if the tile is out of bounds or occupied. Used by the
+   * god-tools "spawn life" brush.
+   */
+  public Animal spawnAnimal(Genome g, int x, int y) {
+    if (!inBounds(x, y) || tiles[y][x].getResident() != null) return null;
+    Animal a = new Animal(g, nextId++);
+    a.setPosition(x, y);
+    a.setBirthTick(tick);
+    a.setSpeciesId(species.classify(g, tick, SpeciesRegistry.NO_PARENT, rng.get()));
+    tiles[y][x].setResident(a);
+    animals.add(a);
+    recordBirth();
+    return a;
+  }
+
+  /** Kill whatever animal stands at (x, y), if any, as a disaster casualty (leaves carrion). */
+  public void killAt(int x, int y) {
+    if (!inBounds(x, y)) return;
+    Animal a = tiles[y][x].getResident();
+    if (a != null && a.isAlive()) {
+      animalDied(a, Species.DeathCause.DISASTER, true);
+    }
+  }
+
   public void removeFromGrid(Animal a) {
     Tile t = tiles[a.getY()][a.getX()];
     if (t.getResident() == a) t.setResident(null);
@@ -275,12 +469,17 @@ public final class World {
   public Snapshot snapshot() {
     float[] fol = new float[width * height];
     byte[] biome = new byte[width * height];
+    float[] carrion = new float[width * height];
+    boolean[] fire = new boolean[width * height];
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
-        fol[y * width + x] = (float) tiles[y][x].getFoliage();
-        biome[y * width + x] = (byte) tiles[y][x].getBiome().ordinal();
+        int i = y * width + x;
+        fol[i] = (float) tiles[y][x].getFoliage();
+        biome[i] = (byte) tiles[y][x].getBiome().ordinal();
+        carrion[i] = (float) tiles[y][x].getCarrion();
       }
     }
+    for (int idx : burning.keySet()) fire[idx] = true;
     java.util.List<Snapshot.Dot> dots = new ArrayList<>(animals.size());
     for (Animal a : animals) {
       Tile tile = tiles[a.getY()][a.getX()];
@@ -303,7 +502,8 @@ public final class World {
     for (int[] f : fights) {
       fs.add(new Snapshot.Fight(f[0], f[1], f[2], f[3]));
     }
-    return new Snapshot(width, height, tick, animals.size(), fol, biome, dots, sc, fs);
+    return new Snapshot(width, height, tick, animals.size(), fol, biome, carrion, fire, dots, sc, fs,
+        seasonsEnabled, seasonName(), seasonalPhase());
   }
 
   /** Records an attack this tick (attacker at ax,ay against a target at tx,ty), for the map's fight indicator. */
@@ -333,5 +533,44 @@ public final class World {
       }
     }
     return sum / (width * height);
+  }
+
+  /** Population-mean of every normalized gene (GeneType order), or all-zero if extinct — the evolution signal. */
+  public double[] meanGenome() {
+    double[] mean = new double[GeneType.COUNT];
+    if (animals.isEmpty()) return mean;
+    for (Animal a : animals) {
+      double[] g = a.getGenome().normVector();
+      for (int i = 0; i < mean.length; i++) mean[i] += g[i];
+    }
+    for (int i = 0; i < mean.length; i++) mean[i] /= animals.size();
+    return mean;
+  }
+
+  /** Mean body mass across the living population, or 0 if extinct. */
+  public double meanMass() {
+    if (animals.isEmpty()) return 0.0;
+    double sum = 0.0;
+    for (Animal a : animals) sum += a.getMass();
+    return sum / animals.size();
+  }
+
+  /** Head counts by diet guild: [herbivores(<0.33), omnivores(<0.66), carnivores]. */
+  public int[] dietCounts() {
+    int[] c = new int[3];
+    for (Animal a : animals) {
+      double d = a.n(GeneType.DIET);
+      c[d < 0.33 ? 0 : d < 0.66 ? 1 : 2]++;
+    }
+    return c;
+  }
+
+  /** Head counts per {@link BiomeType} (ordinal-indexed) of where animals currently stand. */
+  public int[] biomeCounts() {
+    int[] c = new int[BiomeType.ALL.length];
+    for (Animal a : animals) {
+      c[tiles[a.getY()][a.getX()].getBiome().ordinal()]++;
+    }
+    return c;
   }
 }

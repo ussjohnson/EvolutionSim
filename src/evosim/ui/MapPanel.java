@@ -54,18 +54,31 @@ public final class MapPanel extends JComponent {
 
   private volatile Snapshot snap;
   private BiConsumer<Integer, Integer> tileClickListener;
+  private BiConsumer<Integer, Integer> pointerListener; // press + drag, for god-tool brushes
   private DoubleConsumer zoomListener;
   private double zoom = 1.0;
   private int selectedX = -1;
   private int selectedY = -1;
+  private int brushRadius = 0;      // >0 draws a brush cursor for the active tool
+  private int hoverX = -1, hoverY = -1; // pixel position of the cursor, for the brush ring
 
   public MapPanel() {
     setBackground(Color.BLACK);
-    addMouseListener(new MouseAdapter() {
-      @Override public void mouseClicked(MouseEvent e) {
-        handleClick(e.getX(), e.getY());
+    MouseAdapter mouse = new MouseAdapter() {
+      @Override public void mouseClicked(MouseEvent e) { handleClick(e.getX(), e.getY()); }
+      @Override public void mousePressed(MouseEvent e) { handlePointer(e.getX(), e.getY()); }
+      @Override public void mouseDragged(MouseEvent e) {
+        hoverX = e.getX(); hoverY = e.getY();
+        handlePointer(e.getX(), e.getY());
       }
-    });
+      @Override public void mouseMoved(MouseEvent e) {
+        hoverX = e.getX(); hoverY = e.getY();
+        if (brushRadius > 0) repaint();
+      }
+      @Override public void mouseExited(MouseEvent e) { hoverX = hoverY = -1; repaint(); }
+    };
+    addMouseListener(mouse);
+    addMouseMotionListener(mouse);
     addMouseWheelListener(e -> {
       double factor = Math.pow(1.1, -e.getWheelRotation());
       setZoom(zoom * factor);
@@ -83,6 +96,17 @@ public final class MapPanel extends JComponent {
   /** Registers a listener invoked with (tileX, tileY) when the user clicks a tile. */
   public void onTileClick(BiConsumer<Integer, Integer> listener) {
     this.tileClickListener = listener;
+  }
+
+  /** Registers a listener invoked with (tileX, tileY) on mouse press and while dragging — used to paint god-tool brushes. */
+  public void onTilePointer(BiConsumer<Integer, Integer> listener) {
+    this.pointerListener = listener;
+  }
+
+  /** Sets the brush cursor radius in tiles (0 hides it, e.g. for the Inspect tool). */
+  public void setBrushRadius(int r) {
+    this.brushRadius = Math.max(0, r);
+    repaint();
   }
 
   /** Registers a listener invoked whenever the zoom level changes, e.g. via the mouse wheel. */
@@ -127,6 +151,16 @@ public final class MapPanel extends JComponent {
     tileClickListener.accept(tx, ty);
   }
 
+  private void handlePointer(int px, int py) {
+    Snapshot s = snap;
+    if (s == null || pointerListener == null) return;
+    double cell = BASE_CELL * zoom;
+    int tx = (int) (px / cell);
+    int ty = (int) (py / cell);
+    if (tx < 0 || tx >= s.width || ty < 0 || ty >= s.height) return;
+    pointerListener.accept(tx, ty);
+  }
+
   @Override
   protected void paintComponent(Graphics g0) {
     Graphics2D g = (Graphics2D) g0.create();
@@ -158,6 +192,21 @@ public final class MapPanel extends JComponent {
         int w = (int) ((x + 1) * cell) - px;
         int h = (int) ((y + 1) * cell) - py;
         g.fillRect(px, py, w, h);
+      }
+    }
+
+    // Carrion: a small dark-red carcass mark on tiles holding decaying meat.
+    if (s.carrion != null) {
+      for (int y = 0; y < s.height; y++) {
+        for (int x = 0; x < s.width; x++) {
+          float c = s.carrion[y * s.width + x];
+          if (c <= 0) continue;
+          double px = x * cell, py = y * cell;
+          int a = clampByte(60 + (int) Math.min(150, c * 40));
+          g.setColor(new Color(120, 30, 30, a));
+          double m = cell * 0.28;
+          g.fillOval((int) (px + cell / 2 - m / 2), (int) (py + cell / 2 - m / 2), (int) m, (int) m);
+        }
       }
     }
 
@@ -196,6 +245,33 @@ public final class MapPanel extends JComponent {
       g.setColor(new Color(255, 210, 40, 230));
       g.draw(new java.awt.geom.Line2D.Double(mx - spark, my - spark, mx + spark, my + spark));
       g.draw(new java.awt.geom.Line2D.Double(mx - spark, my + spark, mx + spark, my - spark));
+    }
+
+    // Wildfire: a flickering orange overlay over burning tiles (drawn over
+    // animals since fire is the dominant event where it's happening).
+    if (s.fire != null) {
+      boolean flick = (s.tick & 1) == 0;
+      for (int y = 0; y < s.height; y++) {
+        for (int x = 0; x < s.width; x++) {
+          if (!s.fire[y * s.width + x]) continue;
+          int px = (int) (x * cell), py = (int) (y * cell);
+          int w = (int) ((x + 1) * cell) - px, h = (int) ((y + 1) * cell) - py;
+          g.setColor(new Color(255, flick ? 140 : 90, 20, 190));
+          g.fillRect(px, py, w, h);
+          g.setColor(new Color(255, 230, 120, 220));
+          g.fillOval(px + w / 4, py + h / 4, Math.max(2, w / 2), Math.max(2, h / 2));
+        }
+      }
+    }
+
+    // Brush cursor: a ring showing the reach of the active god-tool.
+    if (brushRadius > 0 && hoverX >= 0 && hoverY >= 0) {
+      int tx = (int) (hoverX / cell), ty = (int) (hoverY / cell);
+      double ccx = tx * cell + cell / 2.0, ccy = ty * cell + cell / 2.0;
+      double rr = (brushRadius + 0.5) * cell;
+      g.setStroke(new BasicStroke(2f));
+      g.setColor(new Color(255, 255, 255, 180));
+      g.draw(new Ellipse2D.Double(ccx - rr, ccy - rr, rr * 2, rr * 2));
     }
 
     // Selection highlight.

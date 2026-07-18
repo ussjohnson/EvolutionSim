@@ -71,6 +71,37 @@ public final class HtmlReportWriter {
     String fertilityChart = SvgChart.lineChart("Average plant fertility over time (%)", xTicks,
         List.of(new SvgChart.Series("fertility", "#4a9c4a", toIntArray(fertilityPct))), 860, 260);
 
+    String populationChart = SvgChart.lineChart("Total population over time", xTicks,
+        List.of(new SvgChart.Series("population", "#3B7DBF", toIntArray(stats.globalPopulation()))),
+        860, 260);
+
+    // Evolution of a curated set of traits (population-mean, as a percentage).
+    GeneType[] traitGenes = {
+        GeneType.SIZE, GeneType.DIET, GeneType.LAND_SPEED,
+        GeneType.STRENGTH, GeneType.STEALTH, GeneType.AWARENESS };
+    List<SvgChart.Series> traitSeries = new ArrayList<>();
+    for (GeneType t : traitGenes) {
+      int[] pctVals = new int[samples];
+      List<Double> means = stats.geneMean(t);
+      for (int i = 0; i < samples && i < means.size(); i++) pctVals[i] = (int) Math.round(means.get(i) * 100);
+      traitSeries.add(new SvgChart.Series(t.name(), geneHex(t), pctVals));
+    }
+    String traitChart = SvgChart.lineChart("Evolution of mean traits over time (%)", xTicks,
+        traitSeries, 860, 300);
+
+    // Diet-guild composition over time (head counts per guild).
+    int[] herb = new int[samples], omni = new int[samples], carn = new int[samples];
+    List<int[]> dietRows = stats.dietCounts();
+    for (int i = 0; i < samples && i < dietRows.size(); i++) {
+      herb[i] = dietRows.get(i)[0];
+      omni[i] = dietRows.get(i)[1];
+      carn[i] = dietRows.get(i)[2];
+    }
+    String dietChart = SvgChart.lineChart("Diet-guild population over time", xTicks,
+        List.of(new SvgChart.Series("Herbivore", "#5AC85A", herb),
+            new SvgChart.Series("Omnivore", "#DCC850", omni),
+            new SvgChart.Series("Carnivore", "#DC5A50", carn)), 860, 260);
+
     StringBuilder html = new StringBuilder();
     html.append("<!doctype html>\n<html lang='en'><head><meta charset='utf-8'>\n");
     html.append("<title>EvolutionSim Report</title>\n");
@@ -106,7 +137,20 @@ public final class HtmlReportWriter {
 
     html.append("<h2>Family tree</h2>\n<div class='chart'>").append(chart).append("</div>\n");
 
+    html.append("<h2>Population</h2>\n<div class='chart'>").append(populationChart).append("</div>\n");
+
+    html.append("<h2>Evolution of traits</h2>\n");
+    html.append("<p class='sub'>Population-mean of each gene over the run — this is evolution in motion.</p>\n");
+    html.append("<div class='chart'>").append(traitChart).append("</div>\n");
+    html.append(legendHtml(traitGenes));
+
+    html.append("<h2>Diet guilds</h2>\n<div class='chart'>").append(dietChart).append("</div>\n");
+    html.append(legend(new String[] { "Herbivore", "Omnivore", "Carnivore" },
+        new String[] { "#5AC85A", "#DCC850", "#DC5A50" }));
+
     html.append("<h2>Environment</h2>\n<div class='chart'>").append(fertilityChart).append("</div>\n");
+
+    appendMortality(html, all);
 
     appendSuperlatives(html, significant, endTick);
 
@@ -172,6 +216,59 @@ public final class HtmlReportWriter {
       html.append("</ul>\n");
     }
     html.append("</li>\n");
+  }
+
+  /** A summary of how the whole population died, tallied across every species. */
+  private static void appendMortality(StringBuilder html, List<Species> all) {
+    long starv = 0, pred = 0, old = 0, dis = 0;
+    for (Species s : all) {
+      starv += s.starvationDeaths();
+      pred += s.predationDeaths();
+      old += s.oldAgeDeaths();
+      dis += s.disasterDeaths();
+    }
+    long total = starv + pred + old + dis;
+    if (total == 0) return;
+    html.append("<h2>Mortality</h2>\n");
+    html.append("<p class='sub'>").append(total).append(" deaths in total.</p>\n");
+    html.append("<div class='cards'>\n");
+    mortalityCard(html, starv, total, "starvation");
+    mortalityCard(html, pred, total, "predation");
+    mortalityCard(html, old, total, "old age");
+    mortalityCard(html, dis, total, "disasters");
+    html.append("</div>\n");
+  }
+
+  private static void mortalityCard(StringBuilder html, long n, long total, String label) {
+    long pctv = Math.round(100.0 * n / total);
+    html.append("<div class='card'><div class='n'>").append(n)
+        .append("</div><div class='l'>").append(label).append(" &middot; ").append(pctv).append("%</div></div>\n");
+  }
+
+  /** An HTML legend for the trait-evolution chart, matching the SVG line colours. */
+  private static String legendHtml(GeneType[] genes) {
+    String[] labels = new String[genes.length];
+    String[] colors = new String[genes.length];
+    for (int i = 0; i < genes.length; i++) {
+      labels[i] = genes[i].name();
+      colors[i] = geneHex(genes[i]);
+    }
+    return legend(labels, colors);
+  }
+
+  private static String legend(String[] labels, String[] colors) {
+    StringBuilder sb = new StringBuilder("<p style='font-size:12px;color:#444;'>");
+    for (int i = 0; i < labels.length; i++) {
+      sb.append("<span class='sw' style='background:").append(colors[i]).append("'></span>")
+        .append(esc(labels[i])).append("&nbsp;&nbsp;");
+    }
+    return sb.append("</p>\n").toString();
+  }
+
+  /** The same per-gene hue used by the on-screen Trait Evolution chart, as a hex string. */
+  private static String geneHex(GeneType t) {
+    java.awt.Color c = java.awt.Color.getHSBColor((float) t.ordinal() / GeneType.COUNT, 0.72f, 0.80f);
+    return String.format("#%02X%02X%02X", c.getRed(), c.getGreen(), c.getBlue());
   }
 
   private static void appendSuperlatives(StringBuilder html, List<Species> sp, int endTick) {

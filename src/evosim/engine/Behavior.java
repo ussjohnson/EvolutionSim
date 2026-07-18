@@ -17,9 +17,10 @@ import evosim.model.Tile;
  * classify what was seen (threat / prey / kin), pick one action by priority,
  * resolve it, then pay upkeep and check for death.
  *
- * Decision priority: respond to a nearby threat (fight or flee) → hunt when
- * hungry and carnivorous → graze when hungry and herbivorous → reproduce →
- * seek a better-matching biome → wander from depleted ground → rest.
+ * Decision priority: respond to a nearby threat (fight or flee) → scavenge
+ * carrion underfoot → hunt when hungry and carnivorous → graze when hungry and
+ * herbivorous → reproduce → seek a better-matching biome → wander from depleted
+ * ground → rest.
  */
 final class Behavior {
 
@@ -82,24 +83,36 @@ final class Behavior {
       }
     }
 
-    // 2. Hunt.
+    // 2. Scavenge carrion underfoot — a safe, fightless meat meal for anything
+    // carnivorous enough to stomach it. Recycles the biomass of animals that
+    // died of starvation/old age/disaster back into the food web.
+    if (!acted && a.isHungry() && a.n(GeneType.DIET) >= Balance.SCAVENGE_MIN_DIET) {
+      Tile here = w.tileAt(a.getX(), a.getY());
+      if (here.getCarrion() > 0) {
+        double got = here.scavenge(a.grazeCapacity());
+        a.addEnergy(got * Balance.CARRION_ENERGY * a.n(GeneType.DIET));
+        acted = true;
+      }
+    }
+
+    // 3. Hunt.
     if (!acted && a.isHungry() && prey != null && a.n(GeneType.DIET) > 0.3) {
       if (preyDist <= 1) attack(w, a, prey);
       else moveToward(w, a, prey.getX(), prey.getY());
       acted = true;
     }
 
-    // 3. Graze.
+    // 4. Graze.
     if (!acted && a.isHungry() && a.n(GeneType.DIET) < 0.7) {
       acted = graze(w, a);
     }
 
-    // 4. Reproduce.
+    // 5. Reproduce.
     if (!acted && a.canReproduce()) {
       acted = reproduce(w, a, newborns);
     }
 
-    // 5. Seek a better-matching biome when idle somewhere climatically poor
+    // 6. Seek a better-matching biome when idle somewhere climatically poor
     // for this animal — reuses CAMO_TEMP/CAMO_MOISTURE (the climate an
     // animal is adapted to blend into, see Animal#effectiveStealth) as its
     // habitat preference too, rather than a separate gene: the climate an
@@ -117,14 +130,14 @@ final class Behavior {
       }
     }
 
-    // 6. Wander from depleted ground.
+    // 7. Wander from depleted ground.
     if (!acted && w.tileAt(a.getX(), a.getY()).getFoliage() < 0.05
         && rng.nextDouble() < a.n(GeneType.WANDERLUST)) {
       wander(w, a);
       acted = true;
     }
 
-    // 7. Upkeep: metabolism, growth, death check (always runs).
+    // 8. Upkeep: metabolism, growth, death check (always runs).
     upkeep(w, a);
   }
 
@@ -151,9 +164,8 @@ final class Behavior {
         - b.n(GeneType.DURABILITY) * Balance.ARMOR_K;
     b.damage(Math.max(0, damage));
     if (b.getHp() <= 0) {
-      b.kill();
-      w.removeFromGrid(b);
-      w.species().recordDeath(b.getSpeciesId(), w.currentTick(), Species.DeathCause.PREDATION, b.getBirthTick());
+      // Eaten by the predator, so no carrion is left behind.
+      w.animalDied(b, Species.DeathCause.PREDATION, false);
       w.species().recordKill(a.getSpeciesId());
       // Intra-guild predation (eating another carnivore) yields much less
       // usable energy than eating an herbivore — see Balance.CARNIVORE_MEAT_PENALTY.
@@ -174,6 +186,7 @@ final class Behavior {
     child.setSpeciesId(w.species().classify(childGenome, w.currentTick(), a.getSpeciesId(), w.rng().get()));
     w.placeNewborn(child, spot[0], spot[1]);
     newborns.add(child);
+    w.recordBirth();
     return true;
   }
 
@@ -187,19 +200,16 @@ final class Behavior {
 
   private void upkeep(World w, Animal a) {
     Tile t = w.tileAt(a.getX(), a.getY());
-    a.addEnergy(-a.metabolism(t.getBiome().climateStress()));
+    // Climate stress is the tile's biome cost plus any seasonal winter cold.
+    a.addEnergy(-a.metabolism(t.getBiome().climateStress() + w.seasonalColdStress()));
     a.grow();
     a.regen();
     if (a.getEnergy() <= 0) {
-      a.kill();
-      w.removeFromGrid(a);
-      w.species().recordDeath(a.getSpeciesId(), w.currentTick(), Species.DeathCause.STARVATION, a.getBirthTick());
+      w.animalDied(a, Species.DeathCause.STARVATION, true);
       return;
     }
     if (w.rng().get().nextDouble() < a.agingDeathChance(w.currentTick())) {
-      a.kill();
-      w.removeFromGrid(a);
-      w.species().recordDeath(a.getSpeciesId(), w.currentTick(), Species.DeathCause.OLD_AGE, a.getBirthTick());
+      w.animalDied(a, Species.DeathCause.OLD_AGE, true);
     }
   }
 

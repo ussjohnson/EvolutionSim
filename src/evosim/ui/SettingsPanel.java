@@ -33,6 +33,8 @@ public final class SettingsPanel extends JPanel {
   private final JSpinner duration = intSpinner(0, 0, 1000000);
   private final JSpinner seed = intSpinner(42, 0, Integer.MAX_VALUE);
   private final JCheckBox wraparound = new JCheckBox("Wraparound map (edges connect)");
+  private final JCheckBox seasons = new JCheckBox("Seasons (yearly climate cycle)", true);
+  private final JSpinner seasonLength = intSpinner(480, 20, 100000);
   private final JSpinner founderSpeciesCount = intSpinner(1, 1, 20);
   private final DefaultTableModel geneModel;
 
@@ -77,6 +79,10 @@ public final class SettingsPanel extends JPanel {
     form.add(new JLabel("Duration (ticks, 0 = until Stop)")); form.add(duration);
     form.add(new JLabel("Random seed"));         form.add(seed);
     form.add(new JLabel());                      form.add(wraparound);
+    form.add(new JLabel());                      form.add(seasons);
+    JLabel seasonLenLabel = new JLabel("Season length (ticks/year)");
+    seasonLenLabel.setToolTipText("Ticks in one full spring→winter cycle. Shorter = faster seasons.");
+    form.add(seasonLenLabel);                     form.add(seasonLength);
     JLabel foundersLabel = new JLabel("Starting species (1 = single band)");
     foundersLabel.setToolTipText("<html>When &gt;1, cluster centers are spread across each "
         + "gene's full range (ignoring the table below) so the run starts already speciated, "
@@ -119,6 +125,8 @@ public final class SettingsPanel extends JPanel {
     s.durationTicks = (Integer) duration.getValue();
     s.seed = ((Number) seed.getValue()).longValue();
     s.wraparound = wraparound.isSelected();
+    s.seasonsEnabled = seasons.isSelected();
+    s.seasonLength = (Integer) seasonLength.getValue();
     s.founderSpeciesCount = (Integer) founderSpeciesCount.getValue();
     for (GeneType t : GeneType.ALL) {
       int i = t.ordinal();

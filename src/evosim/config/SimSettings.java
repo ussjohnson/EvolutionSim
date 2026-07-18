@@ -24,6 +24,11 @@ public final class SimSettings {
   // World#seedPopulation) so the run starts with that many already-distinct
   // species instead of waiting for drift to produce them.
   public int founderSpeciesCount = 1;
+  // Seasons: a global yearly climate cycle that swings foliage growth and adds
+  // winter cold-stress upkeep (see World#seasonalPhase). On by default for GUI
+  // runs; seasonLength is the number of ticks in one full year.
+  public boolean seasonsEnabled = true;
+  public int seasonLength = Balance.SEASON_LENGTH;
 
   // Per-gene initial value range, indexed by GeneType.ordinal().
   public final double[] startMin = new double[GeneType.COUNT];
@@ -59,6 +64,7 @@ public final class SimSettings {
     if (durationTicks < 0) durationTicks = 0;
     if (founderSpeciesCount < 1) founderSpeciesCount = 1;
     if (founderSpeciesCount > population) founderSpeciesCount = population;
+    if (seasonLength < 1) seasonLength = 1;
     for (GeneType t : GeneType.ALL) {
       int i = t.ordinal();
       startMin[i] = clamp(startMin[i], t.min(), t.max());

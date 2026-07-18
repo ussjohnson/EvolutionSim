@@ -85,6 +85,10 @@ public final class ResultsPanel extends JPanel {
     chartScroll.getVerticalScrollBar().setUnitIncrement(24);
 
     JTabbedPane tabs = new JTabbedPane();
+    tabs.addTab("Trait Evolution", new TraitChartPanel(world.stats()));
+    JScrollPane ecoScroll = new JScrollPane(new EcologyPanel(world));
+    ecoScroll.getVerticalScrollBar().setUnitIncrement(24);
+    tabs.addTab("Ecology", ecoScroll);
     tabs.addTab("Taxonomy", new SpeciesTreePanel(significant));
     tabs.addTab("Species Table", buildSpeciesTableTab(significant));
 
